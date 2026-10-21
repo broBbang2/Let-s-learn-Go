@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>적응형 바둑</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --panel: #fffdf8;
+    --ink: #24211c;
+    --muted: #7a7266;
+    --line: #e2dccf;
+    --wood: #dcb36b;
+    --wood-line: #3b2c14;
+    --accent: #2f6f5e;
+    --danger: #a3402f;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", sans-serif;
+  }
+  nav.top {
+    max-width: 1100px; margin: 0 auto; padding: 14px 16px 0;
+    display: flex; gap: 16px; font-size: 14px;
+  }
+  nav.top a { color: var(--muted); text-decoration: none; }
+  nav.top a.on { color: var(--ink); font-weight: 600; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    align-items: start;
+  }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+
+  .board-wrap { position: relative; }
+  svg.board {
+    width: 100%;
+    max-height: calc(100vh - 48px);
+    aspect-ratio: 1;
+    display: block;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 8px 24px rgba(60,40,10,.15);
+    touch-action: manipulation;
+  }
+  svg.board .hit { cursor: pointer; }
+  svg.board.locked .hit { cursor: default; }
+
+  aside { display: flex; flex-direction: column; gap: 16px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card h2 {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--muted);
+  }
+  .status { font-size: 18px; font-weight: 600; min-height: 27px; }
+  .status .thinking::after {
+    content: "";
+    display: inline-block;
+    width: 1em;
+    text-align: left;
+    animation: dots 1.2s steps(4) infinite;
+  }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  .message { color: var(--danger); font-size: 13px; min-height: 20px; margin-top: 4px; }
+
+  .eval { margin-top: 12px; }
+  .eval-bar {
+    height: 10px;
+    border-radius: 5px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .eval-bar > div { height: 100%; background: var(--accent); transition: width .4s ease; }
+  .eval-text { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; }
+  .stats b { font-variant-numeric: tabular-nums; }
+
+  .buttons { display: flex; gap: 8px; }
+  button {
+    flex: 1;
+    font: inherit;
+    padding: 9px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--danger); }
+
+  form.new-game { display: grid; gap: 10px; }
+  .field { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .field label { font-size: 14px; color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg input { display: none; }
+  .seg label {
+    padding: 4px 10px;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+    border-left: 1px solid var(--line);
+  }
+  .seg label:first-of-type { border-left: 0; }
+  .seg input:checked + label { background: var(--ink); color: #fff; }
+  select { font: inherit; font-size: 13px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
+
+  .moves {
+    max-height: 180px;
+    overflow-y: auto;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    display: grid;
+    grid-template-columns: 2.5em 1fr 1fr;
+    row-gap: 2px;
+  }
+  .moves .n { color: var(--muted); }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  .rating { display: flex; align-items: baseline; gap: 6px; }
+  .rating b { font-size: 24px; font-variant-numeric: tabular-nums; }
+  .rating .rd { color: var(--muted); font-size: 13px; }
+  .rating .delta { font-size: 13px; font-weight: 600; }
+  .delta.up { color: var(--accent); }
+  .delta.down { color: var(--danger); }
+  .kv { display: flex; justify-content: space-between; font-size: 14px; margin-top: 6px; }
+  .kv span:first-child { color: var(--muted); }
+  .kv b { font-variant-numeric: tabular-nums; }
+  .loss-good { color: var(--accent); }
+  .loss-bad { color: var(--danger); }
+
+  .est-bars { display: flex; align-items: flex-end; gap: 2px; height: 36px; margin-top: 8px; }
+  .est-bars div { flex: 1; background: var(--line); border-radius: 2px 2px 0 0; min-height: 2px; transition: height .3s ease; }
+  .est-bars div.top { background: var(--accent); }
+  .est-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .hint-list { display: grid; gap: 6px; }
+  .hint-item {
+    display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start;
+    padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); cursor: default; font-size: 13px;
+  }
+  .hint-item:hover { border-color: var(--accent); }
+  .hint-item .tag {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    display: grid; place-items: center; font-weight: 600; font-size: 12px;
+  }
+  .hint-item .meta { color: var(--muted); font-size: 12px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  .explain h3 { font-size: 13px; margin: 12px 0 4px; }
+  .explain h3:first-of-type { margin-top: 0; }
+  .explain p { margin: 0 0 6px; font-size: 13px; }
+  table.cands { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  table.cands th { text-align: right; color: var(--muted); font-weight: 500; padding: 2px 4px; }
+  table.cands td { text-align: right; padding: 3px 4px; border-top: 1px solid var(--line); }
+  table.cands th:first-child, table.cands td:first-child { text-align: left; }
+  table.cands tr.chosen td { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
+  table.cands tbody tr:hover td { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  .pv { font-size: 12px; color: var(--muted); }
+  .ev-bars { display: flex; align-items: flex-end; gap: 2px; height: 28px; margin-top: 4px; }
+  .ev-bars div { flex: 1; background: var(--muted); opacity: .5; border-radius: 2px 2px 0 0; min-height: 2px; }
+</style>
+</head>
+<body>
+<nav class="top">
+  <a href="/" class="on">대국</a>
+  <a href="/library">기보 보관함</a>
+</nav>
+<main>
+  <div class="board-wrap">
+    <svg class="board" id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <aside>
+    <section class="card">
+      <div class="status" id="status">불러오는 중</div>
+      <div class="message" id="message"></div>
+      <div class="eval" id="eval" hidden>
+        <div class="eval-bar"><div id="eval-fill"></div></div>
+        <div class="eval-text"><span id="eval-wr"></span><span id="eval-score"></span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>내 실력</h2>
+      <div class="rating"><b id="rating"></b><span class="rd" id="rating-rd"></span><span class="delta" id="rating-delta"></span></div>
+      <div id="estimate" hidden>
+        <div class="kv"><span>추정 급수</span><b id="est-label">-</b></div>
+        <div class="est-bars" id="est-bars"></div>
+        <div class="est-axis"><span>20급</span><span>1급</span><span>9단</span></div>
+      </div>
+      <div class="kv"><span>직전 수</span><b id="last-eval">-</b></div>
+      <div class="kv"><span>이번 판 평균 손실</span><b id="avg-loss">-</b></div>
+      <div class="kv"><span>큰 실수 (3집 이상)</span><b id="blunders">0</b></div>
+      <div id="phases"></div>
+    </section>
+
+    <section class="card">
+      <h2>AI 상대</h2>
+      <div class="kv"><span>모드</span><b id="ai-mode">-</b></div>
+      <div class="kv" id="ai-profile-row"><span>상대 급수</span><b id="ai-profile">-</b></div>
+      <div class="kv" id="ai-target-row"><span>목표 손실</span><b id="ai-target">-</b></div>
+      <div class="kv"><span>실제 평균 손실</span><b id="ai-avg">-</b></div>
+    </section>
+
+    <section class="card">
+      <div class="stats">
+        <div>흑 따낸 돌 <b id="cap-b">0</b></div>
+        <div>백 따낸 돌 <b id="cap-w">0</b></div>
+        <div>덤 <b id="komi"></b></div>
+        <div>수 <b id="move-count">0</b></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="buttons">
+        <button id="hint">힌트</button>
+        <button id="pass">패스</button>
+        <button id="resign" class="danger">기권</button>
+      </div>
+    </section>
+
+    <section class="card explain" id="explain-card" hidden>
+      <h2>수 해설</h2>
+      <div id="explain-ai"></div>
+      <div id="explain-user"></div>
+      <div id="explain-est"></div>
+    </section>
+
+    <section class="card" id="hint-card" hidden>
+      <h2 id="hint-title">힌트</h2>
+      <div class="hint-list" id="hint-list"></div>
+      <div class="note">힌트를 본 수는 실력 추정에서 빠집니다. 항목에 마우스를 올리면 예상 진행이 보입니다.</div>
+    </section>
+
+    <section class="card">
+      <h2>새 대국</h2>
+      <form class="new-game" id="new-game">
+        <div class="field">
+          <label>판 크기</label>
+          <span class="seg">
+            <input type="radio" name="size" id="s9" value="9"><label for="s9">9</label>
+            <input type="radio" name="size" id="s13" value="13"><label for="s13">13</label>
+            <input type="radio" name="size" id="s19" value="19" checked><label for="s19">19</label>
+          </span>
+        </div>
+        <div class="field">
+          <label>내 돌</label>
+          <span class="seg">
+            <input type="radio" name="color" id="cb" value="B" checked><label for="cb">흑</label>
+            <input type="radio" name="color" id="cw" value="W"><label for="cw">백</label>
+          </span>
+        </div>
+        <div class="field">
+          <label>AI</label>
+          <span class="seg">
+            <input type="radio" name="mode" id="m-human" value="human" checked><label for="m-human" title="사람 기보로 학습한 모델이 내 수준의 사람처럼 둠 (v3)">사람형</label>
+            <input type="radio" name="mode" id="m-adaptive" value="adaptive"><label for="m-adaptive" title="목표 손실만큼 일부러 손해 보는 수를 둠 (v2)">손실형</label>
+            <input type="radio" name="mode" id="m-best" value="best"><label for="m-best">최강</label>
+          </span>
+        </div>
+        <button class="primary" type="submit">시작</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>기보</h2>
+      <div class="moves" id="moves"></div>
+    </section>
+  </aside>
+</main>
+
+<script src="/board.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+
+let state = null;
+let busy = false;
+let pending = null; // AI 응답을 기다리는 동안 미리 그려 둘 사용자 수
+let hoverPv = null; // 마우스를 올린 힌트의 예상 진행 수순
+let hoverMarkers = null; // 근거 패널에서 마우스를 올린 후보수 위치
+let turnStart = null; // 내 차례가 시작된 시각 → 생각한 시간(think_ms) 기록용
+
+function lastMove() {
+  if (pending) return pending;
+  const h = state.history;
+  for (let i = h.length - 1; i >= 0; i--) if (h[i][1] !== "pass") return h[i][1];
+  return null;
+}
+
+function drawBoard() {
+  const grid = state.grid.map((row) => row.slice());
+  if (pending) {
+    const [r, c] = pointOf(pending);
+    grid[r][c] = state.user_color;
+  }
+  const hintMarkers = state.hints && !busy ? state.hints.moves.map((h, i) => ({ vertex: h.move, label: "ABC"[i] })) : [];
+  drawGoBoard($("board"), {
+    size: state.size,
+    grid,
+    lastMove: lastMove(),
+    ownership: state.result && state.result.ownership,
+    markers: hoverMarkers || hintMarkers,
+    preview: hoverPv ? { moves: hoverPv, firstColor: state.user_color } : null,
+    clickColor: isLocked() ? null : state.user_color,
+    onClick: play,
+  });
+}
+
+function isLocked() {
+  return busy || !state || state.over || state.to_play !== state.user_color;
+}
+
+function colorName(c) { return c === "B" ? "흑" : "백"; }
+
+function render() {
+  drawBoard();
+  const me = state.user_color;
+  let status;
+  if (state.over) {
+    status = state.result ? `종국 · ${state.result.text}` : "종국";
+  } else if (busy) {
+    status = `<span class="thinking">AI가 생각 중</span>`;
+  } else if (state.to_play === me) {
+    status = `내 차례 (${colorName(me)})`;
+  } else {
+    status = "AI 차례";
+  }
+  $("status").innerHTML = status;
+  $("message").textContent = state.message || "";
+
+  const ai = state.last_ai;
+  $("eval").hidden = !ai;
+  if (ai) {
+    const wr = ai.user_winrate;
+    $("eval-fill").style.width = `${(wr * 100).toFixed(1)}%`;
+    $("eval-wr").textContent = `내 승률 ${(wr * 100).toFixed(0)}%`;
+    const s = ai.user_score_lead;
+    $("eval-score").textContent = s >= 0 ? `내가 ${s.toFixed(1)}집 앞섬` : `내가 ${(-s).toFixed(1)}집 뒤짐`;
+  }
+
+  renderSkill();
+
+  $("cap-b").textContent = state.captures.B;
+  $("cap-w").textContent = state.captures.W;
+  $("komi").textContent = state.komi;
+  $("move-count").textContent = state.history.length;
+
+  const moves = $("moves");
+  moves.innerHTML = "";
+  if (!state.history.length) {
+    moves.innerHTML = `<span class="empty" style="grid-column: 1 / -1">아직 둔 수가 없습니다</span>`;
+  }
+  for (let i = 0; i < state.history.length; i += 2) {
+    const add = (t, cls) => { const s = document.createElement("span"); s.textContent = t; if (cls) s.className = cls; moves.appendChild(s); };
+    add(`${i / 2 + 1}.`, "n");
+    add(state.history[i] ? state.history[i][1] : "");
+    add(state.history[i + 1] ? state.history[i + 1][1] : "");
+  }
+  moves.scrollTop = moves.scrollHeight;
+
+  const locked = isLocked();
+  $("pass").disabled = locked;
+  $("hint").disabled = locked || !!state.hints;
+  $("resign").disabled = busy || !state || state.over;
+  for (const input of $("new-game").elements) {
+    // human 모델이 없으면 사람형을 고를 수 없게
+    input.disabled = busy || (input.id === "m-human" && !state.ai.human_available);
+  }
+}
+
+const PHASE_NAMES = { opening: "포석", middle: "중반", endgame: "끝내기" };
+
+function renderHints() {
+  const card = $("hint-card");
+  const h = state.hints;
+  card.hidden = !h;
+  if (!h) { hoverPv = null; return; }
+  $("hint-title").textContent = h.rank ? `힌트 · ${h.rank}라면 이렇게` : "힌트";
+  const list = $("hint-list");
+  list.innerHTML = "";
+  if (!h.moves.length) list.innerHTML = `<span class="empty">추천할 만한 수가 없습니다</span>`;
+  h.moves.forEach((m, i) => {
+    const item = document.createElement("div");
+    item.className = "hint-item";
+    const human = h.rank ? ` · ${h.rank} ${(m.human_p * 100).toFixed(0)}%가 선택` : "";
+    const pv = m.pv.length > 1 ? `<div class="meta">예상 진행 ${m.pv.join(" → ")}</div>` : "";
+    item.innerHTML = `<span class="tag">${"ABC"[i]}</span><div><b>${m.move}</b> · 최선 대비 ${m.loss.toFixed(1)}집${human}
+      <div class="meta">이 수를 두면 내 승률 ${(m.winrate * 100).toFixed(0)}%</div>${pv}</div>`;
+    item.addEventListener("mouseenter", () => { hoverPv = m.pv; drawBoard(); });
+    item.addEventListener("mouseleave", () => { hoverPv = null; drawBoard(); });
+    list.appendChild(item);
+  });
+}
+
+// 1% 미만은 유효숫자 2자리로 (0.0%로 뭉개지지 않게)
+const pct = (p) => (p == null ? "-" : p > 0 && p < 0.01 ? `${(p * 100).toPrecision(2)}%` : `${(p * 100).toFixed(0)}%`);
+
+// 후보 표에 마우스를 올리면 판에 그 자리를 표시한다
+function bindHover(row, vertex, label) {
+  row.addEventListener("mouseenter", () => { hoverMarkers = [{ vertex, label, color: "#b5651d" }]; drawBoard(); });
+  row.addEventListener("mouseleave", () => { hoverMarkers = null; drawBoard(); });
+}
+
+function renderExplain() {
+  const ai = state.last_ai && state.last_ai.explain;
+  const me = state.user_explain;
+  const evd = state.estimate_evidence;
+  $("explain-card").hidden = !ai && !me && !evd;
+
+  const aiBox = $("explain-ai");
+  aiBox.innerHTML = "";
+  if (ai) {
+    aiBox.innerHTML = `<h3>AI의 수 · ${ai.move}</h3><p>${ai.summary}</p>`;
+    if (ai.candidates.length) {
+      const hasHuman = ai.candidates.some((c) => c.human_p != null);
+      const table = document.createElement("table");
+      table.className = "cands";
+      table.innerHTML = `<thead><tr><th>후보</th><th>손실</th><th>AI 승률</th>${hasHuman ? "<th>사람</th>" : ""}<th>탐색</th></tr></thead>`;
+      const body = document.createElement("tbody");
+      for (const c of ai.candidates) {
+        const tr = document.createElement("tr");
+        if (c.chosen) tr.className = "chosen";
+        tr.title = c.pv.length ? `예상 진행: ${c.pv.join(" → ")}` : "";
+        tr.innerHTML = `<td>${c.move}${c.chosen ? " ✓" : ""}</td><td>${c.loss.toFixed(1)}집</td><td>${pct(c.winrate)}</td>`
+          + (hasHuman ? `<td>${pct(c.human_p)}</td>` : "") + `<td>${c.visits}</td>`;
+        bindHover(tr, c.move, c.move === ai.move ? "✓" : "?");
+        body.appendChild(tr);
+      }
+      table.appendChild(body);
+      aiBox.appendChild(table);
+    }
+  }
+
+  const meBox = $("explain-user");
+  meBox.innerHTML = "";
+  if (me) {
+    const last = state.last_eval;
+    meBox.innerHTML = `<h3>내 수 · ${last.move}</h3><p>${me.summary}</p>`;
+    if (me.best_pv.length) {
+      const pv = document.createElement("div");
+      pv.className = "pv";
+      pv.textContent = `최선 예상 진행: ${me.best_pv.join(" → ")}`;
+      bindHover(pv, me.best_pv[0], "최선");
+      meBox.appendChild(pv);
+    }
+  }
+
+  const estBox = $("explain-est");
+  estBox.innerHTML = "";
+  if (evd && state.estimate) {
+    const ranks = state.estimate.ranks;
+    const maxI = evd.probs.indexOf(Math.max(...evd.probs));
+    const maxP = evd.probs[maxI];
+    const why = maxP < 0.01
+      ? `어느 급수에서도 드문 수(최대 ${pct(maxP)})지만, 상대적으로 ${ranks[maxI]} 쪽 확률이 가장 높아 추정이 그쪽으로 움직였습니다.`
+      : `${ranks[maxI]} 쪽 확률이 가장 높아(${pct(maxP)}) 추정이 그쪽으로 움직였습니다.`;
+    estBox.innerHTML = `<h3>실력 추정 근거 · ${evd.move}</h3><p>급수별로 이 수를 둘 확률입니다. ${why}</p>`;
+    const bars = document.createElement("div");
+    bars.className = "ev-bars";
+    const max = Math.max(...evd.probs, 1e-9);
+    evd.probs.forEach((p, i) => {
+      const b = document.createElement("div");
+      b.style.height = `${Math.max(4, (p / max) * 100)}%`;
+      b.title = `${ranks[i]} ${pct(p)}`;
+      bars.appendChild(b);
+    });
+    estBox.appendChild(bars);
+    estBox.insertAdjacentHTML("beforeend", `<div class="est-axis"><span>20급</span><span>1급</span><span>9단</span></div>`);
+  }
+}
+
+function renderSkill() {
+  renderHints();
+  renderExplain();
+  const est = state.estimate;
+  $("estimate").hidden = !est;
+  if (est) {
+    const conf = Math.round(est.confidence * 100);
+    $("est-label").textContent = est.moves ? `${est.label} (확신 ${conf}%, ${est.moves}수 기준)` : `${est.mean_label} (이전 기록 기준)`;
+    const bars = $("est-bars");
+    bars.innerHTML = "";
+    const max = Math.max(...est.distribution);
+    est.distribution.forEach((p, i) => {
+      const b = document.createElement("div");
+      b.style.height = `${Math.max(4, (p / max) * 100)}%`;
+      b.title = `${est.ranks[i]} ${(p * 100).toFixed(0)}%`;
+      if (p === max) b.className = "top";
+      bars.appendChild(b);
+    });
+  }
+
+  const r = state.rating;
+  $("rating").textContent = Math.round(r.rating);
+  $("rating-rd").textContent = `± ${Math.round(r.rd)}`;
+  const ch = state.rating_change;
+  const delta = $("rating-delta");
+  if (ch) {
+    const d = ch.after - ch.before;
+    delta.textContent = `${d >= 0 ? "+" : ""}${d.toFixed(1)}`;
+    delta.className = `delta ${d >= 0 ? "up" : "down"}`;
+  } else {
+    delta.textContent = "";
+  }
+
+  const ev = state.last_eval;
+  const last = $("last-eval");
+  if (ev) {
+    const loss = ev.score_loss;
+    const best = ev.move === ev.best_move ? "최선수" : `최선 ${ev.best_move}`;
+    last.textContent = `${ev.move} · ${loss.toFixed(1)}집 손실 (${best})`;
+    last.className = loss < 1 ? "loss-good" : loss >= 3 ? "loss-bad" : "";
+  } else {
+    last.textContent = "-";
+    last.className = "";
+  }
+
+  const sum = state.summary;
+  $("avg-loss").textContent = sum.avg_score_loss == null ? "-" : `${sum.avg_score_loss.toFixed(2)}집`;
+  $("blunders").textContent = sum.blunders;
+
+  const ai = state.ai;
+  const MODE_NAMES = { human: "사람형 맞춤 (v3)", adaptive: "손실형 맞춤 (v2)", best: "최강" };
+  $("ai-mode").textContent = MODE_NAMES[ai.mode];
+  $("ai-target-row").hidden = ai.mode === "best";
+  $("ai-profile-row").hidden = !ai.profile;
+  const rank = ai.profile ? ai.profile.replace("k", "급").replace("d", "단") : "-";
+  $("ai-profile").textContent = ai.hybrid ? `${rank} + 손실 맞춤` : rank;
+  if (!ai.human_available && $("m-human").checked) $("m-adaptive").checked = true;
+  $("ai-target").textContent = `수당 ${ai.target_loss.toFixed(2)}집`;
+  $("ai-avg").textContent = ai.level ? `수당 ${ai.avg_loss.toFixed(2)}집` : "-";
+
+  // 종국 후에만 국면별 손실을 보여준다 (대국 중엔 정보가 너무 많음)
+  const phases = $("phases");
+  phases.innerHTML = "";
+  if (state.over) {
+    for (const [k, v] of Object.entries(sum.by_phase)) {
+      const row = document.createElement("div");
+      row.className = "kv";
+      row.innerHTML = `<span>${PHASE_NAMES[k]} (${v.moves}수)</span><b>${v.avg_score_loss.toFixed(2)}집</b>`;
+      phases.appendChild(row);
+    }
+  }
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`서버 오류 ${res.status}`);
+  return res.json();
+}
+
+async function request(path, body, optimistic) {
+  busy = true;
+  pending = optimistic || null;
+  render();
+  try {
+    state = await api(path, body);
+  } catch (e) {
+    state.message = e.message;
+  } finally {
+    busy = false;
+    pending = null;
+    turnStart = performance.now();
+    render();
+  }
+}
+
+function play(move) {
+  if (isLocked()) return;
+  const think_ms = turnStart == null ? null : Math.round(performance.now() - turnStart);
+  request("/api/move", { move, think_ms }, move === "pass" ? null : move);
+}
+
+$("pass").addEventListener("click", () => play("pass"));
+$("hint").addEventListener("click", () => {
+  if (!isLocked() && !state.hints) request("/api/hint", {});
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "h" && !e.metaKey && !e.ctrlKey && document.activeElement.tagName !== "SELECT") $("hint").click();
+});
+$("resign").addEventListener("click", () => {
+  if (!state.over) request("/api/resign", {});
+});
+$("new-game").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  request("/api/new", {
+    size: +f.get("size"),
+    color: f.get("color"),
+    mode: f.get("mode"),
+    visits: 200,
+    komi: +f.get("size") === 19 ? 7.5 : 7,
+  });
+});
+
+api("/api/state").then((s) => { state = s; turnStart = performance.now(); render(); });
+</script>
+</body>
+</html>

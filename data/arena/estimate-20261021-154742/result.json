@@ -1,0 +1,71 @@
+{
+  "by_weight": {
+    "0.3": {
+      "3": {
+        "n": 32,
+        "mean_abs_err_stones": 3.89,
+        "map_within_1": 0.38
+      },
+      "5": {
+        "n": 32,
+        "mean_abs_err_stones": 3.16,
+        "map_within_1": 0.47
+      },
+      "10": {
+        "n": 32,
+        "mean_abs_err_stones": 2.33,
+        "map_within_1": 0.62
+      },
+      "15": {
+        "n": 7,
+        "mean_abs_err_stones": 2.7,
+        "map_within_1": 0.86
+      }
+    },
+    "0.5": {
+      "3": {
+        "n": 32,
+        "mean_abs_err_stones": 3.47,
+        "map_within_1": 0.38
+      },
+      "5": {
+        "n": 32,
+        "mean_abs_err_stones": 2.87,
+        "map_within_1": 0.47
+      },
+      "10": {
+        "n": 32,
+        "mean_abs_err_stones": 2.26,
+        "map_within_1": 0.62
+      },
+      "15": {
+        "n": 7,
+        "mean_abs_err_stones": 2.43,
+        "map_within_1": 0.86
+      }
+    },
+    "1.0": {
+      "3": {
+        "n": 32,
+        "mean_abs_err_stones": 3.31,
+        "map_within_1": 0.38
+      },
+      "5": {
+        "n": 32,
+        "mean_abs_err_stones": 2.87,
+        "map_within_1": 0.47
+      },
+      "10": {
+        "n": 32,
+        "mean_abs_err_stones": 2.42,
+        "map_within_1": 0.62
+      },
+      "15": {
+        "n": 7,
+        "mean_abs_err_stones": 2.45,
+        "map_within_1": 0.86
+      }
+    }
+  },
+  "per_rank_w0.5_n20": {}
+}

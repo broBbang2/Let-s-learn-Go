@@ -1,0 +1,101 @@
+{
+  "v3(10k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 134,
+    "avg_loss": 2.081,
+    "raw_avg_loss": 2.505,
+    "blunder_rate": 0.306,
+    "human_p": 0.3813,
+    "human_top3": 0.784,
+    "first_line_early": 0.189
+  },
+  "v3(15k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 127,
+    "avg_loss": 1.45,
+    "raw_avg_loss": 2.121,
+    "blunder_rate": 0.236,
+    "human_p": 0.3686,
+    "human_top3": 0.74,
+    "first_line_early": 0.137
+  },
+  "v3(1d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 120,
+    "avg_loss": 0.715,
+    "raw_avg_loss": 0.813,
+    "blunder_rate": 0.083,
+    "human_p": 0.3052,
+    "human_top3": 0.7,
+    "first_line_early": 0.088
+  },
+  "v3(1k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 102,
+    "avg_loss": 1.496,
+    "raw_avg_loss": 1.53,
+    "blunder_rate": 0.167,
+    "human_p": 0.3111,
+    "human_top3": 0.725,
+    "first_line_early": 0.0
+  },
+  "v3(20k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 101,
+    "avg_loss": 1.855,
+    "raw_avg_loss": 2.169,
+    "blunder_rate": 0.248,
+    "human_p": 0.3268,
+    "human_top3": 0.772,
+    "first_line_early": 0.069
+  },
+  "v3(3d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 112,
+    "avg_loss": 0.399,
+    "raw_avg_loss": 0.485,
+    "blunder_rate": 0.045,
+    "human_p": 0.2796,
+    "human_top3": 0.679,
+    "first_line_early": 0.027
+  },
+  "v3(5d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 117,
+    "avg_loss": 0.624,
+    "raw_avg_loss": 0.673,
+    "blunder_rate": 0.06,
+    "human_p": 0.2976,
+    "human_top3": 0.744,
+    "first_line_early": 0.051
+  },
+  "v3(5k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 133,
+    "avg_loss": 1.322,
+    "raw_avg_loss": 1.632,
+    "blunder_rate": 0.188,
+    "human_p": 0.3328,
+    "human_top3": 0.782,
+    "first_line_early": 0.113
+  },
+  "v3(9d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 110,
+    "avg_loss": 1.027,
+    "raw_avg_loss": 1.065,
+    "blunder_rate": 0.1,
+    "human_p": 0.3084,
+    "human_top3": 0.709,
+    "first_line_early": 0.027
+  }
+}

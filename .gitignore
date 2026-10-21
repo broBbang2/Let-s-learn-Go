@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# KataGo 모델 (용량 큼, KataGo v1.15.0 릴리스에서 다운로드)
+models/*.bin.gz
+
+# 실행 로그
+analysis_logs/
+
+.DS_Store

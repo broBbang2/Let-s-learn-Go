@@ -1,0 +1,79 @@
+{
+  "v2(1집)": {
+    "games": 12,
+    "win_rate": 0.417,
+    "moves": 581,
+    "avg_loss": 1.227,
+    "blunder_rate": 0.126,
+    "human_p": 0.1444,
+    "human_top3": 0.344,
+    "first_line_early": 0.138,
+    "elo": 1413
+  },
+  "v2(3집)": {
+    "games": 12,
+    "win_rate": 0.0,
+    "moves": 602,
+    "avg_loss": 2.305,
+    "blunder_rate": 0.339,
+    "human_p": 0.0729,
+    "human_top3": 0.223,
+    "first_line_early": 0.296,
+    "elo": 899
+  },
+  "v3(15k)": {
+    "games": 12,
+    "win_rate": 0.25,
+    "moves": 482,
+    "avg_loss": 1.781,
+    "blunder_rate": 0.187,
+    "human_p": 0.303,
+    "human_top3": 0.766,
+    "first_line_early": 0.158,
+    "elo": 1258
+  },
+  "v3(1d)": {
+    "games": 12,
+    "win_rate": 0.833,
+    "moves": 485,
+    "avg_loss": 1.072,
+    "blunder_rate": 0.103,
+    "human_p": 0.3542,
+    "human_top3": 0.784,
+    "first_line_early": 0.083,
+    "elo": 1837
+  },
+  "v3(5k)": {
+    "games": 12,
+    "win_rate": 0.5,
+    "moves": 532,
+    "avg_loss": 1.704,
+    "blunder_rate": 0.164,
+    "human_p": 0.3119,
+    "human_top3": 0.697,
+    "first_line_early": 0.15,
+    "elo": 1486
+  },
+  "최강": {
+    "games": 12,
+    "win_rate": 1.0,
+    "moves": 562,
+    "avg_loss": 0.127,
+    "blunder_rate": 0.007,
+    "human_p": 0.3135,
+    "human_top3": 0.674,
+    "first_line_early": 0.1,
+    "elo": 2121
+  },
+  "혼합(10k,2집)": {
+    "games": 12,
+    "win_rate": 0.5,
+    "moves": 533,
+    "avg_loss": 1.302,
+    "blunder_rate": 0.135,
+    "human_p": 0.2844,
+    "human_top3": 0.702,
+    "first_line_early": 0.167,
+    "elo": 1486
+  }
+}

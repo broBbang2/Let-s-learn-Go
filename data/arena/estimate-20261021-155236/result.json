@@ -1,0 +1,144 @@
+{
+  "by_weight": {
+    "0.3": {
+      "3": {
+        "n": 32,
+        "mean_abs_err_stones": 4.3,
+        "map_within_1": 0.31
+      },
+      "5": {
+        "n": 32,
+        "mean_abs_err_stones": 3.96,
+        "map_within_1": 0.56
+      },
+      "10": {
+        "n": 32,
+        "mean_abs_err_stones": 2.86,
+        "map_within_1": 0.75
+      },
+      "15": {
+        "n": 32,
+        "mean_abs_err_stones": 2.55,
+        "map_within_1": 0.72
+      },
+      "20": {
+        "n": 27,
+        "mean_abs_err_stones": 1.91,
+        "map_within_1": 0.89
+      },
+      "30": {
+        "n": 23,
+        "mean_abs_err_stones": 1.78,
+        "map_within_1": 0.87
+      }
+    },
+    "0.5": {
+      "3": {
+        "n": 32,
+        "mean_abs_err_stones": 4.04,
+        "map_within_1": 0.31
+      },
+      "5": {
+        "n": 32,
+        "mean_abs_err_stones": 3.68,
+        "map_within_1": 0.56
+      },
+      "10": {
+        "n": 32,
+        "mean_abs_err_stones": 2.69,
+        "map_within_1": 0.75
+      },
+      "15": {
+        "n": 32,
+        "mean_abs_err_stones": 2.48,
+        "map_within_1": 0.72
+      },
+      "20": {
+        "n": 27,
+        "mean_abs_err_stones": 1.89,
+        "map_within_1": 0.89
+      },
+      "30": {
+        "n": 23,
+        "mean_abs_err_stones": 1.84,
+        "map_within_1": 0.87
+      }
+    },
+    "1.0": {
+      "3": {
+        "n": 32,
+        "mean_abs_err_stones": 4.13,
+        "map_within_1": 0.31
+      },
+      "5": {
+        "n": 32,
+        "mean_abs_err_stones": 3.68,
+        "map_within_1": 0.56
+      },
+      "10": {
+        "n": 32,
+        "mean_abs_err_stones": 2.57,
+        "map_within_1": 0.75
+      },
+      "15": {
+        "n": 32,
+        "mean_abs_err_stones": 2.57,
+        "map_within_1": 0.72
+      },
+      "20": {
+        "n": 27,
+        "mean_abs_err_stones": 2.01,
+        "map_within_1": 0.89
+      },
+      "30": {
+        "n": 23,
+        "mean_abs_err_stones": 1.98,
+        "map_within_1": 0.87
+      }
+    }
+  },
+  "per_rank_w0.5_n10": {
+    "15k": {
+      "games": 8,
+      "mean_estimate": "10k",
+      "mean_stones": -9.31
+    },
+    "5k": {
+      "games": 8,
+      "mean_estimate": "3k",
+      "mean_stones": -2.84
+    },
+    "1k": {
+      "games": 8,
+      "mean_estimate": "1k",
+      "mean_stones": -0.61
+    },
+    "3d": {
+      "games": 8,
+      "mean_estimate": "3d",
+      "mean_stones": 2.91
+    }
+  },
+  "per_rank_w0.5_n30": {
+    "15k": {
+      "games": 6,
+      "mean_estimate": "10k",
+      "mean_stones": -11.13
+    },
+    "5k": {
+      "games": 5,
+      "mean_estimate": "5k",
+      "mean_stones": -3.74
+    },
+    "1k": {
+      "games": 8,
+      "mean_estimate": "1k",
+      "mean_stones": -0.46
+    },
+    "3d": {
+      "games": 4,
+      "mean_estimate": "3d",
+      "mean_stones": 3.49
+    }
+  }
+}

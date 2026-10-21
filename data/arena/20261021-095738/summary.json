@@ -1,0 +1,92 @@
+{
+  "v3(10k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 152,
+    "avg_loss": 2.072,
+    "blunder_rate": 0.178,
+    "human_p": 0.3706,
+    "human_top3": 0.783,
+    "first_line_early": 0.212
+  },
+  "v3(15k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 138,
+    "avg_loss": 5.012,
+    "blunder_rate": 0.333,
+    "human_p": 0.3465,
+    "human_top3": 0.703,
+    "first_line_early": 0.087
+  },
+  "v3(1d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 205,
+    "avg_loss": 3.316,
+    "blunder_rate": 0.298,
+    "human_p": 0.3328,
+    "human_top3": 0.756,
+    "first_line_early": 0.087
+  },
+  "v3(1k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 157,
+    "avg_loss": 1.515,
+    "blunder_rate": 0.102,
+    "human_p": 0.3533,
+    "human_top3": 0.745,
+    "first_line_early": 0.15
+  },
+  "v3(20k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 102,
+    "avg_loss": 2.146,
+    "blunder_rate": 0.196,
+    "human_p": 0.3766,
+    "human_top3": 0.843,
+    "first_line_early": 0.203
+  },
+  "v3(3d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 175,
+    "avg_loss": 0.55,
+    "blunder_rate": 0.057,
+    "human_p": 0.3668,
+    "human_top3": 0.76,
+    "first_line_early": 0.225
+  },
+  "v3(5d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 148,
+    "avg_loss": 0.596,
+    "blunder_rate": 0.034,
+    "human_p": 0.3422,
+    "human_top3": 0.689,
+    "first_line_early": 0.15
+  },
+  "v3(5k)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 122,
+    "avg_loss": 1.092,
+    "blunder_rate": 0.098,
+    "human_p": 0.4472,
+    "human_top3": 0.844,
+    "first_line_early": 0.125
+  },
+  "v3(9d)": {
+    "games": 0,
+    "win_rate": null,
+    "moves": 133,
+    "avg_loss": 0.557,
+    "blunder_rate": 0.045,
+    "human_p": 0.3478,
+    "human_top3": 0.677,
+    "first_line_early": 0.138
+  }
+}
