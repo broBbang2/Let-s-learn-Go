@@ -103,3 +103,20 @@ def test_key_moments_skip_decided_positions():
     m = key_moments(turns, "proyear_2016")
     assert [x["move_number"] for x in m["surprises"]] == [21]
     assert [x["move_number"] for x in m["turning_points"]] == [22]
+
+
+def test_my_mistakes_for_own_games():
+    from adaptive_go.library import key_moments
+
+    def turn(t, color, wr_loss):
+        return {"turn": t, "winrate_black": 0.5, "best": "B2",
+                "next": {"color": color, "move": "A1", "loss": 2.0, "winrate_loss": wr_loss, "human_p": 0.2}}
+
+    turns = [turn(1, "B", 0.05), turn(2, "W", 0.3), turn(3, "B", 0.2), turn(4, "B", 0.01)]
+    m = key_moments(turns, "proyear_2023", user_color="B")
+    assert [x["move_number"] for x in m["my_mistakes"]] == [2, 4]  # 내(흑) 수만, 2% 넘게 잃은 수
+    assert "my_mistakes" not in key_moments(turns, "proyear_2023")
+
+
+def test_mine_game_load_has_user_color(lib):
+    assert lib.load("m-20261021-120000-abc")["user_color"] == "W"

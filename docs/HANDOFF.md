@@ -227,6 +227,48 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
 
 - 진행 확인 도구 `adaptive_go/progress.py` (`python -m adaptive_go.progress -f`): 작업 로그를 `logs/`에 같이 남김 (사용자가 추가)
 
+### 실제 사람 검증 · 사람 기보 학습 · 형세 학습 도구 (2026-10-21~22)
+
+**사람 기보** (`data/ogs/sample-100k.json.gz`, 사용자 승인 후 받음): za3k.com/ogs의 OGS 무작위 10만 판 샘플(79MB, sha256 c9b274fa…). OGS 허락 하에 재배포, OGS 측이 연구 용도 허용, 모음은 퍼블릭 도메인. `ogs.py`가 줄 단위로 읽음
+- 쓰는 판: 19줄·호선·50수+·랭크·봇 제외·급수 차 ≤3 → 18,554판. 급수는 18k~1d에 몰림(3d+ 약 300판)
+- OGS rank: 29 = 1k, 30 = 1d → 점 척도 `rank − 29`. OGS 체계 ≠ KataGo human 체계 → 오차와 함께 치우침·상관을 봄
+
+**1. 실제 사람으로 실력 추정 검증** (`human_eval.py`, 검증 판 = `train.is_val`, 급수대 5개 × 30판 = 300명, 앞 60수):
+- 생성 데이터만으로 학습한 모델(`models/rank_policy_distill_v1.pt`), 30수(한 사람 기준) 뒤: 상관 0.73, 평균 오차 4.5점, **치우침 +3.4점**(사람을 실제보다 강하게 봄), ±3점 안 46%
+- 급수대별 평균 추정: 20k대 −12.5(실제 −18.3), 15~11k −7.2(−12.8), 10~6k −3.6(−7.9), 5~1k −0.6(−2.7), 1d+ 1.1(1.6) → 순서는 맞지만 하수 쪽을 크게 끌어올림
+- KataGo human 모델(teacher), 30수 뒤: 상관 0.78, 평균 오차 3.7점, **치우침 +2.4점**, ±3점 안 52% (`data/arena/human-eval-20261021-233325/result.json`). 급수대별: 20k대 −12.6, 15~11k −8.6, 10~6k −4.9, 5~1k −1.9, 1d+ 0.4 → teacher도 OGS 하수를 강하게 봄. 우리 생성-데이터 모델은 teacher보다 약간 뒤짐
+
+**2. 사람 기보로 학습** (`ogs_data.py`): 검증 판을 뺀 16,632판의 앞 120수 → 사람이 실제 둔 수를 정답으로 190만 국면(64MB). 급수는 둔 사람의 OGS 급수에서 가장 가까운 격자. 생성 데이터(teacher 분포)와 섞어 학습 → `models/rank_policy_mixed.pt`. 결과: <!-- MIXED_HUMAN_EVAL -->
+- 생성 데이터 추가분 2,400판(seed 10000~) 생성 중 → `data/train/20261021-232836`
+
+**3. 형세 기반 학습 도구** (`territory.py`, 서버·React):
+- **수의 효과**: 내 수 = "둔 뒤" − "그 자리에서 패스했다면", AI 수 = "AI가 둔 뒤" − "AI가 패스했다면" (둘 다 같은 쪽 차례라 차례 이점이 상쇄). 처음엔 "두기 전"과 비교했다가 모든 수가 상대에게 유리하게 나와(상대 다음 수의 가치가 섞임) 바꿈. 형세 카드에 "내 수 D4: 내 땅 +12.8 · 상대 땅 −3.8", 주인이 바뀐 칸(|Δ|>0.35)은 판에 파란 테두리로 잠깐 강조
+- **실수 유형**: 접전 국면의 3집+ 실수만. "최선수를 뒀다면"과 비교해 내 돌 2개 이상이 상대 땅으로 넘어갔으면 사활·전투, 아니면 포석·방향 / 중반 판단 / 끝내기. `moves.jsonl`에 `territory_change`·`mistake_type`, 최근 500수 집계를 "자주 하는 실수" 카드로
+- **대국 후 복기**: 판이 끝나면 `on_finished` → 기보 보관함 분석 자동 시작, 상태에 `review_url`("복기 보기 → 내가 놓친 장면"). 내 대국 분석에 `my_mistakes`(내 수 중 승률 2% 넘게 잃은 상위 3)
+- 한 차례 추가 비용: 형세 질의 2~3번(64 visits) ≈ 0.2~0.3초
+
+### 끊긴 작업 이어 돌리기 (2026-10-22)
+
+컴퓨터를 끄거나 작업이 끊겨도 처음부터 다시 할 필요 없게 만들어 둠.
+
+```bash
+# 진행 상황 보기 (실행 중인 작업, 남은 시간)
+.venv/bin/python -m adaptive_go.progress
+
+# 1) 학습 데이터 생성 이어 하기: 그 폴더의 조각에 이미 있는 판은 건너뜀 (설정은 폴더의 args.json을 따름)
+.venv/bin/python -m adaptive_go.datagen --resume data/train/20261021-232836
+
+# 2) 사람 + 생성 데이터 섞어 학습 이어 하기: models/rank_policy_mixed.ckpt에서 끊긴 배치부터
+.venv/bin/python -m adaptive_go.train --resume --out models/rank_policy_mixed.pt
+
+# 3) 학습이 끝나면 실제 사람으로 검증 (teacher 결과는 이미 있으니 생략 가능)
+.venv/bin/python -m adaptive_go.human_eval --per-bucket 30 --moves 60 --model models/rank_policy_mixed.pt --no-teacher
+```
+
+- 데이터 생성: 60판마다 조각 저장 → 끊기면 최대 59판만 다시 함. 판 번호는 `seed + 라운드×12 + 급수`라 같은 설정이면 같은 판
+- 학습: 500배치마다 `<out>.ckpt`(모델·옵티마이저·학습률 일정·섞은 순서·난수 상태) 저장, 임시 파일에 쓴 뒤 바꿔치기라 저장 중 끊겨도 안전. 마지막 배치 직후 끊겨도 그 에폭의 검증·기록부터 이어감
+- 사람 기보(`data/ogs/`)와 생성 데이터(`data/train/`)는 git에 안 올림. 사람 기보는 `curl -fLo data/ogs/sample-100k.json.gz https://za3k.com/ogs/sample-100k.json.gz` (sha256 c9b274fa…)
+
 ## 다음 할 일
 
 1. 자체 모델 개선: 데이터 늘리기(급수당 200판+), 더 큰 모델·더 긴 학습, 급수 구분을 직접 겨냥한 보조 손실(같은 국면에서 급수별 분포 차이)

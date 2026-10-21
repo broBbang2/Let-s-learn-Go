@@ -19,3 +19,11 @@ app/dist/
 # 생성 데이터·로그 (datagen으로 재생성 가능)
 data/train/
 logs/
+
+# 받은 사람 기보 (79MB, za3k.com/ogs에서 다시 받을 수 있음 — docs/HANDOFF.md 참고)
+data/ogs/
+# 학습 이어 하기용 체크포인트 (옵티마이저 상태 포함, 학습이 끝나면 필요 없음)
+models/*.ckpt
+models/*.ckpt.tmp
+# 검증 중간 산출물 (result.json만 남김)
+data/arena/human-eval-*/*.sequences.json

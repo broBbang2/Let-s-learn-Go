@@ -218,7 +218,8 @@ def test_user_move_explanation_and_estimate_evidence(engine, records):
 
 
 def test_live_ownership_after_ai_reply(game):
-    assert game.state()["ownership"] is None  # 아직 아무도 안 둠
+    # 첫 수의 영역 변화를 재려고 시작 국면의 형세도 미리 받아 둔다
+    assert game.state()["ownership"] is not None
     s = game.user_move("E5")  # AI C3
     own = s["ownership"]
     assert len(own) == 9 and len(own[0]) == 9
@@ -243,3 +244,32 @@ def test_custom_rank_policy_is_used_for_estimate(engine, records):
     s = g.user_move("E5")
     assert calls == [12]
     assert s["estimate"]["rank"] == "20k" and s["estimate"]["source"] == "ours"
+
+
+def test_territory_change_and_mistake_type_per_move(engine, records):
+    g = Game(engine, records, rng=MaxRng(), human_available=True)
+    g.new_game(size=9, komi=7.0, mode=BEST)
+    s = g.user_move("E5")
+    tc = s["territory_change"]
+    assert tc["user"]["move"] == "E5" and tc["ai"]["move"] == "C3"
+    # 가짜 엔진은 국면과 상관없이 같은 형세 → 변화 0
+    assert tc["user"]["mine"] == 0 and tc["user"]["points"] == [] and tc["user"]["lost_stones"] == 0
+    row = records.read("moves.jsonl")[0]
+    assert row["moves"] == []  # 둔 뒤에 기록해도 "이 수 이전 수순"
+    assert row["territory_change"] == {"mine": 0, "theirs": 0, "lost_stones": 0}
+    assert row["mistake_type"] is None and s["weakness"]["moves"] == 1
+
+
+def test_big_mistake_is_classified(engine, records):
+    g = Game(engine, records, rng=MaxRng(), human_available=True)
+    g.new_game(size=9, komi=7.0, mode=BEST)
+    s = g.user_move("pass")  # 가짜 엔진: 패스는 13집 손해, 초반 → 포석·방향
+    assert records.read("moves.jsonl")[0]["mistake_type"] == "opening"
+    assert s["weakness"]["types"]["opening"]["count"] == 1
+
+
+def test_game_end_triggers_review(engine, records):
+    finished = []
+    g = Game(engine, records, rng=MaxRng(), human_available=True, on_finished=finished.append)
+    s = g.resign()
+    assert finished == [g.game_id] and s["review_url"] == f"/library#m-{g.game_id}"

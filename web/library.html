@@ -99,6 +99,7 @@
   .moment i { width: 8px; height: 8px; margin-top: 6px; }
   .dot { border-radius: 50%; background: var(--turning); }
   .diamond { background: var(--series); transform: rotate(45deg); }
+  .mine { border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 30%, transparent); }
   .star { background: var(--ink); clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); width: 10px !important; height: 10px !important; }
   .note-box { font-size: 13px; background: color-mix(in srgb, var(--ink) 6%, transparent); border-left: 3px solid var(--ink); padding: 6px 10px; margin-top: 8px; }
 </style>
@@ -380,11 +381,14 @@ function renderMoments() {
     const view = nx ? ` KataGo: 손실 ${nx.loss.toFixed(1)}집(후보 ${nx.engine_rank ? `${nx.engine_rank}위` : "밖"}), ${era}년 프로 확률 ${pct(nx.human_p)}.` : "";
     return { turn: t, text: `${num}수 명장면 — ${text}${view}`, kind: "star" };
   });
+  // 내 대국이면 "내가 놓친 장면"(내 수 중 승률을 가장 많이 잃은 수)을 맨 앞에
+  const mine = (analysis.my_mistakes || []).map((m) => ({ ...m, text: `내 실수 — ${m.text}`, kind: "mine" }));
   const list = [
+    ...mine,
     ...notes,
     ...analysis.turning_points.map((m) => ({ ...m, kind: "dot" })),
     ...analysis.surprises.map((m) => ({ ...m, kind: "diamond" })),
-  ].sort((a, b) => a.turn - b.turn);
+  ].sort((a, b) => (b.kind === "mine") - (a.kind === "mine") || a.turn - b.turn); // 내 실수 먼저, 그다음 수 순서
   $("moments-card").hidden = !list.length;
   const box = $("moments");
   box.innerHTML = "";

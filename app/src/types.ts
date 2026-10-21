@@ -14,6 +14,15 @@ export interface Candidate {
   pv: string[];
 }
 
+export interface TerritoryDelta {
+  move: string;
+  mine: number;
+  theirs: number;
+  points: string[];
+  lost_stones: number;
+  won_stones: number;
+}
+
 export interface GameState {
   game_id: string;
   size: number;
@@ -27,6 +36,11 @@ export interface GameState {
   over: boolean;
   result: { text: string; score: number | null; ownership?: Ownership } | null;
   ownership?: Ownership | null;
+  /** 방금 내 수·AI 수가 바꾼 예상 영역 (내 기준 칸 수 변화) + 주인이 바뀐 칸 */
+  territory_change: { user: TerritoryDelta | null; ai: TerritoryDelta | null } | null;
+  /** 최근 moves수 동안의 큰 실수(3집 이상) 유형 */
+  weakness: { moves: number; types: Record<string, { count: number; avg_loss: number; label: string }> };
+  review_url: string | null;
   last_ai: {
     move: string;
     loss: number;

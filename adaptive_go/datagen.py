@@ -11,6 +11,7 @@ python -m adaptive_go.datagen --games-per-rank 60 --workers 3
 """
 
 import argparse
+import json
 import random
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -97,16 +98,30 @@ def main(argv=None):
     p.add_argument("--shard-games", type=int, default=60, help="이 판 수마다 조각 파일로 저장")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default=str(arena.ROOT / "data/train"))
+    p.add_argument("--resume", metavar="폴더", help="끊긴 생성 이어 하기: 그 폴더의 조각에 있는 판은 건너뛴다")
     args = p.parse_args(argv)
     progress.tee_stdout("datagen")
 
-    out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
-    out.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        out = Path(args.resume)
+        saved = json.loads((out / "args.json").read_text()) if (out / "args.json").exists() else {}
+        for k in ("games_per_rank", "seed", "size", "shard_games"):  # 판 번호가 같아지도록 처음 설정을 따른다
+            if k in saved:
+                setattr(args, k, saved[k])
+        shards = sorted(out.glob("shard-*.npz"))
+        done = {int(g) for f in shards for g in np.unique(np.load(f)["game"])}
+        shard = max((int(f.stem.split("-")[1]) for f in shards), default=-1) + 1
+    else:
+        out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
+        out.mkdir(parents=True, exist_ok=True)
+        done, shard = set(), 0
+    (out / "args.json").write_text(json.dumps({k: getattr(args, k) for k in ("games_per_rank", "seed", "size", "shard_games")}))
     # 급수를 섞어서 배치해 조각마다 급수가 고르게 들어가게
     jobs = [(r, args.seed + g * len(RANKS) + i, args.size) for g in range(args.games_per_rank) for i, r in enumerate(RANKS)]
-    print(f"{len(jobs)}판 → {out}", flush=True)
+    jobs = [j for j in jobs if j[1] not in done]
+    print(f"{len(jobs)}판 → {out}" + (f" (이미 생성된 {len(done)}판은 건너뜀)" if done else ""), flush=True)
     init = (str(arena.DEFAULT_MODEL), str(arena.DEFAULT_CONFIG), str(arena.HUMAN_MODEL))
-    buf, shard, positions, t0 = [], 0, 0, time.time()
+    buf, positions, t0 = [], 0, time.time()
     with ProcessPoolExecutor(args.workers, initializer=arena._init_worker, initargs=init) as pool:
         for i, res in enumerate(pool.map(_run, jobs), 1):
             buf.append(res)

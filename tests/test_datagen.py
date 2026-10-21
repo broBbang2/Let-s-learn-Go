@@ -36,3 +36,37 @@ def test_pack_shapes_and_padding(engine):
     assert d["rank"][0] == 4 and d["game"][0] == 7  # RANKS.index("5k") == 4
     x = np.unpackbits(d["planes"][0])[: PLANES * 81].reshape(PLANES, 9, 9)
     assert (x == rows[0][0]).all()
+
+
+def test_resume_skips_saved_games(tmp_path, monkeypatch):
+    import adaptive_go.datagen as dg
+
+    # 엔진 없이: 워커 풀 대신 즉석 실행하는 가짜로 바꿔 "어떤 판을 생성하려 했는지"만 본다
+    asked = []
+
+    class FakePool:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def map(self, fn, jobs):
+            for rank, seed, size in jobs:
+                asked.append(seed)
+                yield rank, seed, []
+
+    monkeypatch.setattr(dg, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(dg.progress, "tee_stdout", lambda kind: None)
+    out = tmp_path / "run"
+    out.mkdir()
+    (out / "args.json").write_text('{"games_per_rank": 2, "seed": 100, "size": 9, "shard_games": 60}')
+    # 이미 저장된 조각: 게임 100, 101
+    rows = [("20k", 100, [(np.zeros((12, 9, 9), np.uint8), [0], [1.0], 0, 0)]), ("15k", 101, [(np.zeros((12, 9, 9), np.uint8), [0], [1.0], 0, 0)])]
+    np.savez_compressed(out / "shard-000.npz", **pack(rows, 9))
+    dg.main(["--resume", str(out)])
+    assert 100 not in asked and 101 not in asked and len(asked) == 2 * 12 - 2
+    assert (out / "shard-001.npz").exists()  # 조각 번호는 이어서

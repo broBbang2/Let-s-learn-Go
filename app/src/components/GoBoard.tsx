@@ -22,6 +22,8 @@ interface Props {
   territory: TerritoryMode;
   markers: Marker[];
   preview: { moves: string[]; firstColor: Color } | null;
+  /** 방금 수로 주인이 바뀐 칸: 테두리로 잠깐 강조 */
+  highlights?: string[];
   /** 지금 클릭으로 둘 수 있는 색. null이면 클릭 불가 */
   clickColor: Color | null;
   check: (vertex: string) => IllegalReason | null;
@@ -299,6 +301,32 @@ export function GoBoard(props: Props) {
       </g>
 
       {final && <g pointerEvents="none">{territory}</g>}
+
+      {/* 방금 수로 주인이 바뀐 칸: 테두리를 그렸다가 천천히 흐려진다 (판이 바뀔 때마다 다시) */}
+      {!final && props.highlights && props.highlights.length > 0 && (
+        <g pointerEvents="none" key={`hl-${props.lastMove}-${props.highlights.length}`}>
+          {props.highlights.map((v) => {
+            const [r, c] = pointOf(v);
+            const w = cell * 0.9;
+            return (
+              <motion.rect
+                key={v}
+                x={x(c) - w / 2}
+                y={y(r) - w / 2}
+                width={w}
+                height={w}
+                rx={w * 0.12}
+                fill="none"
+                stroke="var(--changed)"
+                strokeWidth={cell * 0.07}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0, 1, 1, 0.35] }}
+                transition={{ duration: 2.2, times: [0, 0.12, 0.6, 1] }}
+              />
+            );
+          })}
+        </g>
+      )}
 
       {/* 대국 중 잡힐 위기의 돌: 돌 위에 그 자리 주인 색 표시 (종국의 사석 표시와 같은 모양) */}
       {!final && own && (

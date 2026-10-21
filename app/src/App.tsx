@@ -2,7 +2,7 @@ import { MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { GoBoard, type TerritoryMode } from "./components/GoBoard";
-import { ActionsCard, AiCard, ExplainCard, MovesCard, NewGameCard, SkillCard, StatsCard, StatusCard, TerritoryCard } from "./components/Panels";
+import { ActionsCard, AiCard, ExplainCard, MovesCard, NewGameCard, SkillCard, StatsCard, StatusCard, TerritoryCard, WeaknessCard } from "./components/Panels";
 import { feedback, setSoundEnabled, soundEnabled } from "./feedback";
 import { ILLEGAL_TEXT, Position, type IllegalReason, type Stone } from "./go/rules";
 import type { GameState, Marker, Mode } from "./types";
@@ -153,6 +153,11 @@ export function App() {
             territory={territory}
             markers={hoverMarkers ?? []}
             preview={null}
+            highlights={
+              territoryOn && !busy && state.territory_change
+                ? [...new Set([...(state.territory_change.user?.points ?? []), ...(state.territory_change.ai?.points ?? [])])]
+                : []
+            }
             clickColor={locked ? null : state.user_color}
             check={(v) => shown.check(v, state.user_color)}
             onPlay={play}
@@ -165,6 +170,7 @@ export function App() {
           <StatusCard state={state} busy={busy} message={localMsg ?? state.message} />
           {territoryOn && <TerritoryCard state={state} />}
           <SkillCard state={state} />
+          <WeaknessCard state={state} />
           <AiCard state={state} />
           <StatsCard state={state} captures={shown.captures} />
           <ActionsCard

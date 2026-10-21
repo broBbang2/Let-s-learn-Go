@@ -27,6 +27,8 @@ TURNING_MIN_WINRATE_LOSS = 0.08
 SURPRISE_MAX_HUMAN_P = 0.05
 SURPRISE_MAX_LOSS = 0.5
 SURPRISES = 3
+# 내 대국 복기: 내 수 중 승률을 가장 많이 잃은 수 (결정적 수보다 기준을 낮춰 배울 장면을 넉넉히)
+MY_MISTAKES = 3
 # human 모델 proyear 프로필이 지원하는 연도 범위
 PROYEAR_RANGE = (1800, 2023)
 
@@ -118,6 +120,7 @@ class Library:
                         "comments": {},
                         "notes": {},
                         "setup": False,
+                        "user_color": row["user_color"],
                     }
         return None
 
@@ -134,7 +137,11 @@ class Library:
             data = json.loads(cache.read_text())
             if data.get("version") == ANALYSIS_VERSION:
                 # 주요 장면은 국면 데이터에서 매번 다시 뽑는다 → 기준을 바꿔도 재분석이 필요 없다
-                return {"state": "done", **data, **key_moments(data["turns"], data["profile"])}
+                user_color = None
+                if game_id.startswith("m-"):
+                    g = self.load(game_id)
+                    user_color = g and g["user_color"]
+                return {"state": "done", **data, **key_moments(data["turns"], data["profile"], user_color)}
         with self.lock:
             job = self.jobs.get(game_id)
             return dict(job) if job else {"state": "none"}
@@ -223,8 +230,10 @@ def summarize_analysis(g, results, profile):
     }
 
 
-def key_moments(turns, profile):
+def key_moments(turns, profile, user_color=None):
     """결정적 수와 예상 밖의 명수. 승부가 이미 기운 국면의 수는 뺀다(skill과 같은 접전 기준).
+
+    user_color(내 대국)를 주면 "내가 놓친 장면"(내 수 중 승률을 가장 많이 잃은 수)도 따로 뽑는다.
 
     끝난 판에선 어떤 수를 둬도 손실이 거의 없어서 "드물지만 손해 없는 수"가 쏟아지고,
     큰 승률 변화도 의미가 없기 때문이다.
@@ -269,7 +278,14 @@ def key_moments(turns, profile):
             )
         return {"turn": t["turn"], "move_number": num, "text": text}
 
-    return {
+    out = {
         "turning_points": sorted((moment(t, "turning") for t in turning), key=lambda m: m["turn"]),
         "surprises": sorted((moment(t, "surprise") for t in surprising), key=lambda m: m["turn"]),
     }
+    if user_color:
+        mine = sorted(
+            (t for t in played if t["next"]["color"] == user_color and t["next"]["winrate_loss"] > 0.02),
+            key=lambda t: -t["next"]["winrate_loss"],
+        )[:MY_MISTAKES]
+        out["my_mistakes"] = sorted((moment(t, "turning") for t in mine), key=lambda m: m["turn"])
+    return out

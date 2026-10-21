@@ -8,6 +8,7 @@
   --wood-line: #3b2c14;
   --accent: #2f6f5e;
   --danger: #a3402f;
+  --changed: #1f5fbf; /* 방금 수로 주인이 바뀐 칸 테두리: 나무색·흑·백 어디서나 보이는 파랑 */
 }
 * { box-sizing: border-box; }
 body {
@@ -194,3 +195,19 @@ table.cands tbody tr:hover td { background: color-mix(in srgb, var(--accent) 20%
 .pv { font-size: 12px; color: var(--muted); }
 .ev-bars { display: flex; align-items: flex-end; gap: 2px; height: 28px; margin-top: 4px; }
 .ev-bars div { flex: 1; background: var(--muted); opacity: .5; border-radius: 2px 2px 0 0; min-height: 2px; }
+
+/* 형세 카드: 방금 수의 영역 변화 */
+.delta { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; }
+.delta-row { display: flex; justify-content: space-between; gap: 8px; }
+.delta-row span:first-child { color: var(--muted); }
+.delta-row b { font-variant-numeric: tabular-nums; }
+.up { color: var(--accent); }
+.down { color: var(--danger); }
+.changed-key { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--changed); border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* 실수 유형 카드 */
+.weak-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 13px; margin-top: 8px; }
+.weak-bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.weak-bar div { height: 100%; background: var(--danger); opacity: .75; }
+.review-link { display: inline-block; margin-top: 8px; font-size: 14px; color: var(--accent); font-weight: 600; text-decoration: none; }
+.review-link:hover { text-decoration: underline; }

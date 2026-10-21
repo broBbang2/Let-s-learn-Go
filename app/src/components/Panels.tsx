@@ -25,6 +25,11 @@ export function StatusCard({ state, busy, message }: { state: GameState; busy: b
   return (
     <section className="card">
       <div className="status">{status}</div>
+      {state.over && state.review_url && (
+        <a className="review-link" href={state.review_url}>
+          복기 보기 → 내가 놓친 장면
+        </a>
+      )}
       <div className="message">{message}</div>
       {ai && (
         <div className="eval">
@@ -207,6 +212,65 @@ export function ActionsCard(p: { locked: boolean; canResign: boolean; onPass: ()
   );
 }
 
+const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v).toFixed(1)}`;
+
+/** 방금 내 수·AI 수로 예상 영역이 얼마나 바뀌었나 (내 기준). 판에는 주인이 바뀐 칸을 파란 테두리로 보여준다. */
+function DeltaRows({ state }: { state: GameState }) {
+  const tc = state.territory_change;
+  if (!tc || (!tc.user && !tc.ai)) return null;
+  const row = (who: string, d: NonNullable<typeof tc.user>) => {
+    const net = d.mine - d.theirs; // 내 땅 변화 − 상대 땅 변화 = 이 수로 벌어진(좁혀진) 차이
+    return (
+      <div className="delta-row" key={who}>
+        <span>
+          {who} {d.move}
+        </span>
+        <b className={net > 0.5 ? "up" : net < -0.5 ? "down" : ""}>
+          내 땅 {signed(d.mine)} · 상대 땅 {signed(d.theirs)}
+          {d.lost_stones > 0 && ` · 내 돌 ${d.lost_stones}개 위기`}
+        </b>
+      </div>
+    );
+  };
+  return (
+    <div className="delta">
+      {tc.user && row("내 수", tc.user)}
+      {tc.ai && row("AI 수", tc.ai)}
+      {(tc.user?.points.length || tc.ai?.points.length) ? (
+        <span className="note" style={{ marginTop: 0 }}>
+          <i className="changed-key" />
+          방금 두 수로 주인이 바뀐 칸
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** 큰 실수(3집 이상)의 유형별 횟수 — 어떤 실수를 자주 하는지 */
+export function WeaknessCard({ state }: { state: GameState }) {
+  const w = state.weakness;
+  const types = Object.entries(w.types);
+  const total = types.reduce((n, [, t]) => n + t.count, 0);
+  return (
+    <section className="card">
+      <h2>자주 하는 실수 · 최근 {w.moves}수</h2>
+      {!total && <span className="empty">아직 큰 실수(3집 이상)가 없습니다</span>}
+      {types.map(([key, t]) => (
+        <div className="weak-row" key={key}>
+          <span>{t.label}</span>
+          <b>
+            {t.count}번 · 평균 {t.avg_loss.toFixed(1)}집
+          </b>
+          <div className="weak-bar">
+            <div style={{ width: `${(t.count / total) * 100}%` }} />
+          </div>
+        </div>
+      ))}
+      {total > 0 && <div className="note">사활·전투는 그 수 뒤에 내 돌 2개 이상이 상대 땅으로 넘어간 실수, 나머지는 국면 단계로 나눴습니다.</div>}
+    </section>
+  );
+}
+
 /** 형세: KataGo가 지금 국면에서 본 "누구 땅이 될지"를 칸 수로 센다 (판 위 색칠의 범례 겸 요약). */
 export function TerritoryCard({ state }: { state: GameState }) {
   const own = state.ownership;
@@ -246,6 +310,7 @@ export function TerritoryCard({ state }: { state: GameState }) {
         <span><i className={`sw ${state.user_color}`} />내 땅({meName}) 약 <b>{mine}</b>칸</span>
         <span>상대 땅({themName}) 약 <b>{theirs}</b>칸<i className={`sw ${state.user_color === "B" ? "W" : "B"}`} style={{ marginLeft: 4, marginRight: 0 }} /></span>
       </div>
+      <DeltaRows state={state} />
       {(myDanger > 0 || theirDanger > 0) && (
         <div className="kv">
           <span>잡힐 위기</span>

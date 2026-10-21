@@ -30,8 +30,11 @@ class Records:
         self.dir = Path(data_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
 
-    def append_move(self, game_id, board, move_eval, think_ms, rating, ai_settings, extra=None):
-        """move_eval을 board에 두기 직전 상태로 호출한다 (board.history = 이 수 이전 수순)."""
+    def append_move(self, game_id, board, move_eval, think_ms, rating, ai_settings, extra=None, moves=None):
+        """move_eval을 board에 두기 직전 상태로 호출한다 (board.history = 이 수 이전 수순).
+
+        이미 둔 뒤라면 moves로 "이 수 이전 수순"을 직접 넘긴다.
+        """
         self._append(
             "moves.jsonl",
             {
@@ -41,7 +44,7 @@ class Records:
                 "size": board.size,
                 "komi": board.komi,
                 "rules": "chinese",
-                "moves": [[c, v] for c, v in board.history],
+                "moves": [[c, v] for c, v in (board.history if moves is None else moves)],
                 **move_eval.to_dict(),
                 "think_ms": think_ms,
                 "player_rating": round(rating.rating, 1),

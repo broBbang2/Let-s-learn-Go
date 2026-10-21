@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -54,11 +55,18 @@ class Batches:
         self.d, self.idx, self.bs, self.augment, self.rng = data, indices, batch_size, augment, rng
         self.n = data["size"]
         self.table = symmetry_index_table(self.n)
+        # 이어 하기: 끊긴 에폭의 섞은 순서와 이미 끝낸 배치 수 (한 번 쓰고 비운다)
+        self.resume_order, self.resume_step = None, 0
+        self.order = None
 
     def __iter__(self):
-        order = self.rng.permutation(self.idx) if self.augment else self.idx
-        for s in range(0, len(order), self.bs):
-            yield self.make(order[s : s + self.bs])
+        if self.resume_order is not None:
+            self.order, start = self.resume_order, self.resume_step
+            self.resume_order, self.resume_step = None, 0
+        else:
+            self.order, start = (self.rng.permutation(self.idx) if self.augment else self.idx), 0
+        for s in range(start * self.bs, len(self.order), self.bs):
+            yield self.make(self.order[s : s + self.bs])
 
     def __len__(self):
         return math.ceil(len(self.idx) / self.bs)
@@ -86,8 +94,10 @@ class Batches:
         )
 
 
-def run_epoch(model, batches, device, opt=None, sched=None):
+def run_epoch(model, batches, device, opt=None, sched=None, on_step=None, first_step=0):
+    """on_step(끝낸 배치 수): 학습 중 체크포인트 저장용. first_step은 이어 하기에서 이미 끝낸 배치 수."""
     train = opt is not None
+    step = first_step
     model.train(train)
     tot = {"loss": 0.0, "top1_played": 0.0, "top1_teacher": 0.0, "n": 0}
     with torch.set_grad_enabled(train):
@@ -102,6 +112,9 @@ def run_epoch(model, batches, device, opt=None, sched=None):
                 loss.backward()
                 opt.step()
                 sched.step()
+                step += 1
+                if on_step:
+                    on_step(step)
             pred = logits.argmax(1)
             m = len(x)
             tot["loss"] += loss.item() * m
@@ -109,12 +122,14 @@ def run_epoch(model, batches, device, opt=None, sched=None):
             tot["top1_teacher"] += (pred == target.argmax(1)).float().sum().item()
             tot["n"] += m
     n = tot.pop("n")
+    if n == 0:  # 이어 하기에서 남은 배치가 없을 때
+        return {}
     return {k: round(v / n, 4) for k, v in tot.items()}
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="급수 조건부 수 예측 모델 학습")
-    p.add_argument("data", nargs="+", help="datagen 출력 폴더(들)")
+    p.add_argument("data", nargs="*", help="datagen·ogs_data 출력 폴더(들). --resume이면 체크포인트의 것을 씀")
     p.add_argument("--epochs", type=int, default=8)
     p.add_argument("--batch", type=int, default=256)
     p.add_argument("--lr", type=float, default=2e-3)
@@ -122,9 +137,21 @@ def main(argv=None):
     p.add_argument("--blocks", type=int, default=6)
     p.add_argument("--out", default=str(ROOT / "models/rank_policy.pt"))
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--ckpt-steps", type=int, default=500, help="이 배치 수마다 이어 하기용 체크포인트 저장")
+    p.add_argument("--resume", action="store_true", help="<out>.ckpt에서 이어 하기 (처음 설정·데이터를 그대로 씀)")
     args = p.parse_args(argv)
     progress.tee_stdout("train")
     started = time.time()
+    ckpt_path = Path(args.out).with_suffix(".ckpt")
+    ckpt = None
+    if args.resume:
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        for k, v in ckpt["args"].items():  # 데이터·모델 크기·학습률 일정이 처음과 같아야 이어진다
+            if k not in ("resume",):
+                setattr(args, k, v)
+        print(f"이어 하기: {ckpt_path} (에폭 {ckpt['epoch']}, 배치 {ckpt['step']})", flush=True)
+    elif not args.data:
+        p.error("데이터 폴더를 주거나 --resume을 쓰세요")
 
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
@@ -141,10 +168,47 @@ def main(argv=None):
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * len(train_batches))
 
-    history, best = [], None
-    for epoch in range(1, args.epochs + 1):
+    history, best, first_epoch, first_step = [], None, 1, 0
+    if ckpt:
+        model.load_state_dict(ckpt["model"])
+        opt.load_state_dict(ckpt["opt"])
+        sched.load_state_dict(ckpt["sched"])
+        rng.bit_generator.state = ckpt["rng"]
+        history, best, first_epoch, first_step = ckpt["history"], ckpt["best"], ckpt["epoch"], ckpt["step"]
+        if ckpt["order"] is not None:
+            # 에폭 도중 체크포인트 → 그 에폭의 남은 배치부터 (마지막 배치 직후에 끊겼으면 검증·기록만 남음)
+            train_batches.resume_order, train_batches.resume_step = ckpt["order"], first_step
+        else:  # 에폭 끝(검증까지 마침) 체크포인트 → 다음 에폭부터
+            first_epoch, first_step = first_epoch + 1, 0
+
+    def checkpoint(epoch, step, order):
+        tmp = ckpt_path.with_suffix(".ckpt.tmp")
+        torch.save(
+            {
+                "args": {k: v for k, v in vars(args).items() if k != "resume"},
+                "model": model.state_dict(),
+                "opt": opt.state_dict(),
+                "sched": sched.state_dict(),
+                "rng": rng.bit_generator.state,
+                "epoch": epoch,
+                "step": step,
+                "order": order,
+                "history": history,
+                "best": best,
+            },
+            tmp,
+        )
+        os.replace(tmp, ckpt_path)  # 저장 도중 끊겨도 이전 체크포인트가 깨지지 않게
+
+    for epoch in range(first_epoch, args.epochs + 1):
         t = time.time()
-        tr = run_epoch(model, train_batches, device, opt, sched)
+
+        def on_step(step, epoch=epoch):
+            if step % args.ckpt_steps == 0:
+                checkpoint(epoch, step, train_batches.order)
+
+        start_step = first_step if epoch == first_epoch else 0
+        tr = run_epoch(model, train_batches, device, opt, sched, on_step, start_step)
         va = run_epoch(model, val_batches, device)
         history.append({"epoch": epoch, "train": tr, "val": va, "seconds": round(time.time() - t)})
         print(f"[{epoch}/{args.epochs}] epoch {epoch}: train {tr} | val {va} | {time.time() - t:.0f}초"
@@ -153,6 +217,7 @@ def main(argv=None):
             best = va["loss"]
             save(model.cpu(), args.out, {"history": history, "data": args.data})
             model.to(device)
+        checkpoint(epoch, len(train_batches), None)  # 에폭 끝: 다음에 이어 하면 다음 에폭부터
     Path(args.out).with_suffix(".json").write_text(json.dumps(history, indent=2))
     print(f"저장: {args.out} (최저 검증 손실 {best})")
 

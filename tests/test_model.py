@@ -97,3 +97,35 @@ def test_val_split_covers_every_rank():
     val = is_val(seeds)
     assert 0.07 < val.mean() < 0.13
     assert all(val[i::12].sum() >= 3 for i in range(12))  # 모든 급수가 검증에 들어간다
+
+
+def test_train_resume_continues_from_checkpoint(shard_dir, tmp_path, monkeypatch):
+    import adaptive_go.train as tr
+
+    monkeypatch.setattr(tr, "pick_device", lambda: "cpu")
+    monkeypatch.setattr(tr.progress, "tee_stdout", lambda kind: None)
+    out = tmp_path / "m.pt"
+    common = [str(shard_dir), "--channels", "8", "--blocks", "1", "--batch", "16", "--out", str(out), "--ckpt-steps", "1"]
+
+    # 1에폭 도중에 끊긴 상황 흉내: 3번째 배치에서 예외
+    real = tr.run_epoch
+    def crash_after(model, batches, device, opt=None, sched=None, on_step=None, first_step=0):
+        if opt is None:
+            return real(model, batches, device)
+        def stepper(step):
+            on_step(step)
+            if step == 3:
+                raise KeyboardInterrupt
+        return real(model, batches, device, opt, sched, stepper, first_step)
+    monkeypatch.setattr(tr, "run_epoch", crash_after)
+    with pytest.raises(KeyboardInterrupt):
+        tr.main(common + ["--epochs", "2"])
+    ckpt = torch.load(out.with_suffix(".ckpt"), weights_only=False)
+    assert ckpt["epoch"] == 1 and ckpt["step"] == 3 and ckpt["order"] is not None
+
+    # 이어 하기: 남은 배치부터 끝까지 → 2에폭 기록, 모델 파일 저장
+    monkeypatch.setattr(tr, "run_epoch", real)
+    tr.main(["--resume", "--out", str(out)])
+    ckpt = torch.load(out.with_suffix(".ckpt"), weights_only=False)
+    assert ckpt["epoch"] == 2 and [h["epoch"] for h in ckpt["history"]] == [1, 2]
+    assert out.exists()

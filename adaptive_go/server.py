@@ -25,7 +25,8 @@ from .players import BestPlayer, HumanPlayer, HybridPlayer, TargetLossPlayer
 from .rank_estimate import RANKS, RankEstimate, nearest_rank, rank_label
 from .rating import Rating, update
 from .records import Records, new_game_id
-from .skill import evaluate_move, summarize
+from .skill import effective_loss, evaluate_move, summarize
+from .territory import MISTAKE_LOSS, change, classify_mistake, weakness
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT / "web"
@@ -54,6 +55,8 @@ def needs_hybrid(target_loss, calibration):
 
 # 대국 중 형세(누구 땅인지) 질의 탐색량. 매 수 보여주므로 빠르게, 그래도 초반에 흔들리지 않을 만큼
 LIVE_OWNERSHIP_VISITS = 64
+# 실수 유형 집계에 쓰는 최근 착수 수 (moves.jsonl 끝에서부터)
+WEAKNESS_WINDOW = 500
 
 STATIC_TYPES = {
     ".js": "text/javascript; charset=utf-8",
@@ -68,8 +71,12 @@ STATIC_TYPES = {
 class Game:
     """한 판의 상태와 엔진 호출을 묶는다. HTTP와 분리해 테스트하기 쉽게 했다."""
 
-    def __init__(self, engine, records, rng=None, human_available=False, calibration=None, rank_policy=None):
+    def __init__(
+        self, engine, records, rng=None, human_available=False, calibration=None, rank_policy=None, on_finished=None
+    ):
         self.engine = engine
+        # 판이 끝나면 불린다 (서버는 여기서 내 대국 복기 분석을 시작한다)
+        self.on_finished = on_finished
         # 실력 추정에 쓸 "급수별 수 확률" 공급원. 기본은 KataGo human 모델, 직접 학습한 모델로 바꿀 수 있다
         self.rank_policy = rank_policy or engine.human_policies
         self.rank_source = "ours" if rank_policy else "katago"
@@ -85,6 +92,13 @@ class Game:
         self.difficulties = {m: DifficultyState(**saved.get(m, {})) for m in (ADAPTIVE, HUMAN)}
         self.level_ratings = records.load_json("ai_levels.json") or difficulty.default_level_ratings()
         self.rank_prior = (records.load_json("rank_estimate.json") or {}).get("prior")
+        # 실수 유형 집계: 최근 WEAKNESS_WINDOW수(실수 아닌 수 포함)에서 시작해 수마다 더한다
+        # (매번 파일 전체를 읽지 않게. 힌트를 따라 둔 예전 기록은 뺀다)
+        self.recent_rows = [
+            {"mistake_type": r.get("mistake_type"), "score_loss": r["score_loss"]}
+            for r in records.read("moves.jsonl")[-WEAKNESS_WINDOW:]
+            if not (r.get("hint_followed") or r.get("hint_used"))
+        ]
         # 엔진 프로세스는 한 번에 한 질의만 처리하므로 요청들을 직렬화한다
         self.lock = threading.Lock()
         self.new_game()
@@ -116,9 +130,11 @@ class Game:
             self.rating_change = None
             self.message = None
             self.ownership = None
+            self.territory_change = None
             if self.board.to_play != color:
                 self._ai_move()
-                self._update_live_ownership()
+            # 첫 수부터 "이 수로 땅이 얼마나 바뀌었나"를 보려면 시작 국면의 형세도 있어야 한다
+            self._update_live_ownership()
             return self.state()
 
     def user_move(self, move, think_ms=None):
@@ -134,17 +150,58 @@ class Game:
                 # 두기 전에 평가해야 "그 국면에서 최선수 대비" 손실이 나온다
                 ev = evaluate_move(self.engine, self.board, move)
                 self._update_estimate(move)
-                extra = {"rank_estimate": self.estimate.summary()["mean_stones"]}
-                self.records.append_move(
-                    self.game_id, self.board, ev, think_ms, self.rating, self._ai_settings(), extra
-                )
+                before_moves = list(self.board.history)
                 self.board.play(move)
+                # 이 수의 효과 = "둔 뒤" − "그 자리에서 패스했다면". 두 국면 모두 상대 차례라
+                # 둘 차례의 이점이 상쇄된다 (두기 전과 비교하면 상대가 둘 다음 수의 가치까지 섞인다)
+                own_user = self._ownership_now()
+                user_change = change(
+                    self._ownership_of(before_moves + [(self.user_color, "pass")]), own_user, self.user_color, self.board.grid
+                )
+                eff = effective_loss(ev.score_loss, ev.winrate_before)
+                mistake = None
+                if eff is not None and eff >= MISTAKE_LOSS:
+                    # 사활·전투 실수인지는 "최선수를 뒀다면"과 비교해야 안다: 최선수면 살았을 내 돌이 죽었나
+                    vs_best = change(
+                        self._ownership_of(before_moves + [(self.user_color, ev.best_move)]),
+                        own_user,
+                        self.user_color,
+                        self.board.grid,
+                    )
+                    mistake = classify_mistake(eff, ev.phase, vs_best)
+                extra = {
+                    "rank_estimate": self.estimate.summary()["mean_stones"],
+                    "territory_change": user_change and {k: user_change[k] for k in ("mine", "theirs", "lost_stones")},
+                    "mistake_type": mistake,
+                }
+                self.records.append_move(
+                    self.game_id, self.board, ev, think_ms, self.rating, self._ai_settings(), extra, before_moves
+                )
+                self.recent_rows = (self.recent_rows + [{"mistake_type": mistake, "score_loss": ev.score_loss}])[
+                    -WEAKNESS_WINDOW:
+                ]
                 self.evals.append(ev)
                 self.user_explain = explain_user_move(ev, ev.best_pv)
                 self._update_profile()  # 방금 수로 추정이 바뀌었으니 AI 급수도 다시 맞춘다
+                self.ownership = own_user
                 if not self.board.is_over():
                     self._ai_move()
-                self._update_live_ownership()
+                    self._update_live_ownership()
+                    # AI 수의 효과도 같은 방식: "AI가 둔 뒤" − "AI가 패스했다면" (내 기준으로 센다)
+                    after_user = before_moves + [(self.user_color, move)]
+                    ai_change = change(
+                        self._ownership_of(after_user + [(opponent(self.user_color), "pass")]),
+                        self.ownership,
+                        self.user_color,
+                        self.board.grid,
+                    )
+                else:
+                    ai_change = None
+                last_ai = self.board.history[-1][1] if ai_change else None
+                self.territory_change = {
+                    "user": user_change and {**user_change, "move": move.upper()},
+                    "ai": ai_change and {**ai_change, "move": last_ai},
+                }
             self._finish_if_over()
             return self.state()
 
@@ -153,6 +210,7 @@ class Game:
             if self.result is None:
                 self.result = {"text": f"{opponent(self.user_color)}+R (기권)", "score": None}
                 self._record_game(user_score=0.0)
+                self._finished()
             return self.state()
 
     @property
@@ -228,12 +286,27 @@ class Game:
         n = self.board.size
         return [[analysis.ownership_at(self.board.format_vertex((r, c))) for c in range(n)] for r in range(n)]
 
+    def _ownership_now(self):
+        a = self.engine.analyze(self.board, max_visits=LIVE_OWNERSHIP_VISITS, include_ownership=True)
+        return self._ownership_grid(a)
+
+    def _ownership_of(self, moves):
+        """주어진 수순의 국면(가정: 패스했다면, 최선수였다면)의 형세."""
+        b = Board(self.board.size, self.board.komi)
+        for _, v in moves:
+            b.play(v)
+        a = self.engine.analyze(b, max_visits=LIVE_OWNERSHIP_VISITS, include_ownership=True)
+        return self._ownership_grid(a)
+
     def _update_live_ownership(self):
-        """AI 응수까지 끝난 국면의 형세. 웹이 판 위에 누구 땅이 될지 은은하게 칠한다."""
+        """AI 응수까지 끝난 국면의 형세. 웹이 판 위에 누구 땅이 될지 칠한다."""
         if self.board.is_over():
             return
-        a = self.engine.analyze(self.board, max_visits=LIVE_OWNERSHIP_VISITS, include_ownership=True)
-        self.ownership = self._ownership_grid(a)
+        self.ownership = self._ownership_now()
+
+    def _finished(self):
+        if self.on_finished:
+            self.on_finished(self.game_id)
 
     def _finish_if_over(self):
         if self.board.is_over() and self.result is None:
@@ -249,6 +322,7 @@ class Game:
             else:
                 user_score = 1.0 if (score > 0) == (self.user_color == BLACK) else 0.0
             self._record_game(user_score)
+            self._finished()
 
     def _record_game(self, user_score):
         before = self.rating
@@ -298,6 +372,11 @@ class Game:
             "over": b.is_over() or self.result is not None,
             "result": self.result,
             "ownership": self.ownership,  # 대국 중 형세 (종국 후엔 result.ownership)
+            # 방금 내 수·AI 수가 영역을 얼마나 바꿨나 (내 기준) + 주인이 바뀐 칸
+            "territory_change": self.territory_change,
+            "weakness": {"moves": len(self.recent_rows), "types": weakness(self.recent_rows)},
+            # 끝난 판은 기보 보관함에서 복기 (끝나면 분석이 자동으로 시작됨)
+            "review_url": f"/library#m-{self.game_id}" if self.result else None,
             "last_ai": self.last_ai,
             "last_eval": last and {
                 "move": last.move,
@@ -452,12 +531,20 @@ def main(argv=None):
 
             rank_policy = NetPolicy(args.rank_model).human_policies
             print(f"실력 추정: 직접 학습한 모델 {args.rank_model}")
-        game = Game(engine, records, human_available=bool(human_model), calibration=calibration, rank_policy=rank_policy)
         # 기보 분석은 대국 엔진을 막지 않도록 KataGo를 하나 더 띄운다 (처음 분석할 때)
         library = Library(
             args.library_dir,
             records,
             lambda: KataGoEngine.from_paths(args.katago, args.model, args.config, human_model=human_model),
+        )
+        game = Game(
+            engine,
+            records,
+            human_available=bool(human_model),
+            calibration=calibration,
+            rank_policy=rank_policy,
+            # 판이 끝나면 바로 복기 분석을 시작해 둔다 → 끝나고 "복기 보기"를 누를 즈음엔 준비됨
+            on_finished=lambda game_id: library.start(f"m-{game_id}"),
         )
         server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(game, library))
         print(f"http://localhost:{args.port}")
