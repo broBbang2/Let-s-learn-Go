@@ -153,17 +153,6 @@
   .est-bars div { flex: 1; background: var(--line); border-radius: 2px 2px 0 0; min-height: 2px; transition: height .3s ease; }
   .est-bars div.top { background: var(--accent); }
   .est-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
-  .hint-list { display: grid; gap: 6px; }
-  .hint-item {
-    display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start;
-    padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); cursor: default; font-size: 13px;
-  }
-  .hint-item:hover { border-color: var(--accent); }
-  .hint-item .tag {
-    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
-    display: grid; place-items: center; font-weight: 600; font-size: 12px;
-  }
-  .hint-item .meta { color: var(--muted); font-size: 12px; }
   .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
   .explain h3 { font-size: 13px; margin: 12px 0 4px; }
@@ -233,7 +222,6 @@
 
     <section class="card">
       <div class="buttons">
-        <button id="hint">힌트</button>
         <button id="pass">패스</button>
         <button id="resign" class="danger">기권</button>
       </div>
@@ -244,12 +232,6 @@
       <div id="explain-ai"></div>
       <div id="explain-user"></div>
       <div id="explain-est"></div>
-    </section>
-
-    <section class="card" id="hint-card" hidden>
-      <h2 id="hint-title">힌트</h2>
-      <div class="hint-list" id="hint-list"></div>
-      <div class="note">힌트를 본 수는 실력 추정에서 빠집니다. 항목에 마우스를 올리면 예상 진행이 보입니다.</div>
     </section>
 
     <section class="card">
@@ -296,7 +278,6 @@ const $ = (id) => document.getElementById(id);
 let state = null;
 let busy = false;
 let pending = null; // AI 응답을 기다리는 동안 미리 그려 둘 사용자 수
-let hoverPv = null; // 마우스를 올린 힌트의 예상 진행 수순
 let hoverMarkers = null; // 근거 패널에서 마우스를 올린 후보수 위치
 let turnStart = null; // 내 차례가 시작된 시각 → 생각한 시간(think_ms) 기록용
 
@@ -313,14 +294,12 @@ function drawBoard() {
     const [r, c] = pointOf(pending);
     grid[r][c] = state.user_color;
   }
-  const hintMarkers = state.hints && !busy ? state.hints.moves.map((h, i) => ({ vertex: h.move, label: "ABC"[i] })) : [];
   drawGoBoard($("board"), {
     size: state.size,
     grid,
     lastMove: lastMove(),
     ownership: state.result && state.result.ownership,
-    markers: hoverMarkers || hintMarkers,
-    preview: hoverPv ? { moves: hoverPv, firstColor: state.user_color } : null,
+    markers: hoverMarkers || [],
     clickColor: isLocked() ? null : state.user_color,
     onClick: play,
   });
@@ -380,7 +359,6 @@ function render() {
 
   const locked = isLocked();
   $("pass").disabled = locked;
-  $("hint").disabled = locked || !!state.hints;
   $("resign").disabled = busy || !state || state.over;
   for (const input of $("new-game").elements) {
     // human 모델이 없으면 사람형을 고를 수 없게
@@ -389,28 +367,6 @@ function render() {
 }
 
 const PHASE_NAMES = { opening: "포석", middle: "중반", endgame: "끝내기" };
-
-function renderHints() {
-  const card = $("hint-card");
-  const h = state.hints;
-  card.hidden = !h;
-  if (!h) { hoverPv = null; return; }
-  $("hint-title").textContent = h.rank ? `힌트 · ${h.rank}라면 이렇게` : "힌트";
-  const list = $("hint-list");
-  list.innerHTML = "";
-  if (!h.moves.length) list.innerHTML = `<span class="empty">추천할 만한 수가 없습니다</span>`;
-  h.moves.forEach((m, i) => {
-    const item = document.createElement("div");
-    item.className = "hint-item";
-    const human = h.rank ? ` · ${h.rank} ${(m.human_p * 100).toFixed(0)}%가 선택` : "";
-    const pv = m.pv.length > 1 ? `<div class="meta">예상 진행 ${m.pv.join(" → ")}</div>` : "";
-    item.innerHTML = `<span class="tag">${"ABC"[i]}</span><div><b>${m.move}</b> · 최선 대비 ${m.loss.toFixed(1)}집${human}
-      <div class="meta">이 수를 두면 내 승률 ${(m.winrate * 100).toFixed(0)}%</div>${pv}</div>`;
-    item.addEventListener("mouseenter", () => { hoverPv = m.pv; drawBoard(); });
-    item.addEventListener("mouseleave", () => { hoverPv = null; drawBoard(); });
-    list.appendChild(item);
-  });
-}
 
 // 1% 미만은 유효숫자 2자리로 (0.0%로 뭉개지지 않게)
 const pct = (p) => (p == null ? "-" : p > 0 && p < 0.01 ? `${(p * 100).toPrecision(2)}%` : `${(p * 100).toFixed(0)}%`);
@@ -490,13 +446,13 @@ function renderExplain() {
 }
 
 function renderSkill() {
-  renderHints();
   renderExplain();
   const est = state.estimate;
   $("estimate").hidden = !est;
   if (est) {
     const conf = Math.round(est.confidence * 100);
-    $("est-label").textContent = est.moves ? `${est.label} (확신 ${conf}%, ${est.moves}수 기준)` : `${est.mean_label} (이전 기록 기준)`;
+    const src = est.source === "ours" ? " · 자체 모델" : "";
+    $("est-label").textContent = (est.moves ? `${est.label} (확신 ${conf}%, ${est.moves}수 기준)` : `${est.mean_label} (이전 기록 기준)`) + src;
     const bars = $("est-bars");
     bars.innerHTML = "";
     const max = Math.max(...est.distribution);
@@ -595,12 +551,6 @@ function play(move) {
 }
 
 $("pass").addEventListener("click", () => play("pass"));
-$("hint").addEventListener("click", () => {
-  if (!isLocked() && !state.hints) request("/api/hint", {});
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "h" && !e.metaKey && !e.ctrlKey && document.activeElement.tagName !== "SELECT") $("hint").click();
-});
 $("resign").addEventListener("click", () => {
   if (!state.over) request("/api/resign", {});
 });

@@ -62,8 +62,11 @@ class Records:
         self.save_json("player.json", asdict(rating))
 
     def recent_user_losses(self, n):
-        """최근 접전 국면 사용자 착수 n개의 실력 지표용 손실 (오래된 것부터). 힌트를 본 수는 뺀다."""
-        rows = [r for r in self.read("moves.jsonl") if not r.get("hint_used")]
+        """최근 접전 국면 사용자 착수 n개의 실력 지표용 손실 (오래된 것부터).
+
+        힌트 기능은 없앴지만, 힌트가 있던 때의 기록 중 힌트를 따라 둔 수는 계속 뺀다.
+        """
+        rows = [r for r in self.read("moves.jsonl") if not (r.get("hint_followed") or r.get("hint_used"))]
         losses = [effective_loss(r["score_loss"], r["winrate_before"]) for r in rows]
         return [x for x in losses if x is not None][-n:]
 

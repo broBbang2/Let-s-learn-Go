@@ -25,10 +25,11 @@ from .players import BestPlayer, HumanPlayer, HybridPlayer, TargetLossPlayer
 from .rank_estimate import RANKS, RankEstimate, nearest_rank, rank_label
 from .rating import Rating, update
 from .records import Records, new_game_id
-from .skill import EVAL_VISITS, evaluate_move, summarize
+from .skill import evaluate_move, summarize
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT / "web"
+APP_DIST = ROOT / "app" / "dist"  # React 대국 화면 빌드 결과 (cd app && npm run build)
 HUMAN_MODEL = ROOT / "models/b18c384nbt-humanv0.bin.gz"
 LIBRARY_DIR = ROOT / "library"
 
@@ -51,18 +52,27 @@ def needs_hybrid(target_loss, calibration):
     return target_loss > max(calibration.values())
 
 
-# 힌트는 "추정 실력보다 이만큼(점) 강한 사람이 둘 법한 수" 중에서 고른다.
-# 엔진 최선수를 그대로 보여주면 이해하기 어려운 수일 때가 많아 학습용으로는 한 단계 위가 낫다
-HINT_STRETCH = 3.0
-HINT_MAX_LOSS = 1.0  # 힌트 후보는 엔진 최선수 대비 이 이하 손실인 수만
-HINT_COUNT = 3
+# 대국 중 형세(누구 땅인지) 질의 탐색량. 매 수 보여주므로 빠르게, 그래도 초반에 흔들리지 않을 만큼
+LIVE_OWNERSHIP_VISITS = 64
+
+STATIC_TYPES = {
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".woff2": "font/woff2",
+    ".json": "application/json",
+}
 
 
 class Game:
     """한 판의 상태와 엔진 호출을 묶는다. HTTP와 분리해 테스트하기 쉽게 했다."""
 
-    def __init__(self, engine, records, rng=None, human_available=False, calibration=None):
+    def __init__(self, engine, records, rng=None, human_available=False, calibration=None, rank_policy=None):
         self.engine = engine
+        # 실력 추정에 쓸 "급수별 수 확률" 공급원. 기본은 KataGo human 모델, 직접 학습한 모델로 바꿀 수 있다
+        self.rank_policy = rank_policy or engine.human_policies
+        self.rank_source = "ours" if rank_policy else "katago"
         self.records = records
         self.rng = rng or random.Random()
         self.human_available = human_available
@@ -97,8 +107,6 @@ class Game:
             self.estimate = RankEstimate.from_prior(self.rank_prior)
             self.profile, self.hybrid = None, False
             self._update_profile()
-            self.hints = None
-            self.hint_used = False
             self.user_explain = None
             self.estimate_evidence = None
             self.ai_losses = []
@@ -107,8 +115,10 @@ class Game:
             self.result = None
             self.rating_change = None
             self.message = None
+            self.ownership = None
             if self.board.to_play != color:
                 self._ai_move()
+                self._update_live_ownership()
             return self.state()
 
     def user_move(self, move, think_ms=None):
@@ -124,53 +134,18 @@ class Game:
                 # 두기 전에 평가해야 "그 국면에서 최선수 대비" 손실이 나온다
                 ev = evaluate_move(self.engine, self.board, move)
                 self._update_estimate(move)
-                extra = {"hint_used": self.hint_used, "rank_estimate": self.estimate.summary()["mean_stones"]}
+                extra = {"rank_estimate": self.estimate.summary()["mean_stones"]}
                 self.records.append_move(
                     self.game_id, self.board, ev, think_ms, self.rating, self._ai_settings(), extra
                 )
                 self.board.play(move)
                 self.evals.append(ev)
                 self.user_explain = explain_user_move(ev, ev.best_pv)
-                self.hints, self.hint_used = None, False
                 self._update_profile()  # 방금 수로 추정이 바뀌었으니 AI 급수도 다시 맞춘다
                 if not self.board.is_over():
                     self._ai_move()
+                self._update_live_ownership()
             self._finish_if_over()
-            return self.state()
-
-    def hint(self):
-        """사용자 차례의 힌트: 엔진 기준으로 손해가 작은 수 중, 한 단계 위 사람이 둘 법한 순."""
-        with self.lock:
-            if self.result is not None or self.board.is_over() or self.board.to_play != self.user_color:
-                return self.state()
-            if self.hints is None:
-                hint_rank = nearest_rank(self.estimate.mean_stones() + HINT_STRETCH)
-                profile = f"rank_{hint_rank}" if self.human_available else None
-                a = self.engine.analyze(self.board, max_visits=EVAL_VISITS, human_profile=profile)
-                best = a.best
-                human = a.human_policy or {}
-                pool = [
-                    m
-                    for m in a.moves
-                    if m.visits >= difficulty.MIN_VISITS and best.score_lead - m.score_lead <= HINT_MAX_LOSS
-                ]
-                # 사람 정책이 없으면(human 모델 없음) 엔진 순서 그대로
-                pool.sort(key=lambda m: (-human.get(m.move, 0.0), m.order))
-                self.hints = {
-                    "rank": rank_label(hint_rank) if self.human_available else None,
-                    "moves": [
-                        {
-                            "move": m.move,
-                            "loss": round(max(0.0, best.score_lead - m.score_lead), 2),
-                            "winrate": round(m.winrate, 3),
-                            "human_p": round(human.get(m.move, 0.0), 3),
-                            "pv": m.pv[:6],
-                        }
-                        for m in pool[:HINT_COUNT]
-                    ],
-                }
-            # 힌트를 본 수는 실력 추정·손실 통계에서 뺀다 (실력이 부풀려지지 않게)
-            self.hint_used = True
             return self.state()
 
     def resign(self):
@@ -196,10 +171,10 @@ class Game:
         }
 
     def _update_estimate(self, move):
-        """사용자 수로 급수 추정 갱신. pass와 힌트 본 수는 실력 정보가 아니라서 건너뛴다."""
-        if not self.human_available or move.lower() == "pass" or self.hint_used:
+        """사용자 수로 급수 추정 갱신. pass는 실력 정보가 아니라서 건너뛴다."""
+        if not self.human_available or move.lower() == "pass":
             return
-        policies = self.engine.human_policies(self.board, [f"rank_{r}" for r in RANKS])
+        policies = self.rank_policy(self.board, [f"rank_{r}" for r in RANKS])
         self.estimate.update(policies, move.upper())
         # 근거: 급수별로 "이 수를 둘 확률". 확률이 높은 급수 쪽으로 추정이 움직인다
         self.estimate_evidence = {
@@ -248,6 +223,18 @@ class Game:
             "explain": explain_ai_move(player, ev.move, analysis, ev.score_loss),
         }
 
+    def _ownership_grid(self, analysis):
+        """ownership을 grid와 같은 [row][col] 배열로 (흑 +1 ~ 백 -1)."""
+        n = self.board.size
+        return [[analysis.ownership_at(self.board.format_vertex((r, c))) for c in range(n)] for r in range(n)]
+
+    def _update_live_ownership(self):
+        """AI 응수까지 끝난 국면의 형세. 웹이 판 위에 누구 땅이 될지 은은하게 칠한다."""
+        if self.board.is_over():
+            return
+        a = self.engine.analyze(self.board, max_visits=LIVE_OWNERSHIP_VISITS, include_ownership=True)
+        self.ownership = self._ownership_grid(a)
+
     def _finish_if_over(self):
         if self.board.is_over() and self.result is None:
             final = self.engine.analyze(self.board, max_visits=self.visits, include_ownership=True)
@@ -255,10 +242,7 @@ class Game:
             self.result = {
                 "text": format_score(score),
                 "score": score,
-                "ownership": [
-                    [final.ownership_at(self.board.format_vertex((r, c))) for c in range(self.board.size)]
-                    for r in range(self.board.size)
-                ],
+                "ownership": self._ownership_grid(final),
             }
             if score == 0:
                 user_score = 0.5
@@ -313,6 +297,7 @@ class Game:
             "ko_point": b.format_vertex(b.ko_point) if b.ko_point else None,
             "over": b.is_over() or self.result is not None,
             "result": self.result,
+            "ownership": self.ownership,  # 대국 중 형세 (종국 후엔 result.ownership)
             "last_ai": self.last_ai,
             "last_eval": last and {
                 "move": last.move,
@@ -322,13 +307,11 @@ class Game:
             },
             "summary": summarize(self.evals),
             "rating": {"rating": round(self.rating.rating, 1), "rd": round(self.rating.rd, 1)},
-            "estimate": {**self.estimate.summary(), "ranks": [rank_label(r) for r in RANKS]}
+            "estimate": {**self.estimate.summary(), "ranks": [rank_label(r) for r in RANKS], "source": self.rank_source}
             if self.human_available
             else None,
-            "hints": self.hints,
             "user_explain": self.user_explain,
             "estimate_evidence": self.estimate_evidence,
-            "hint_used": self.hint_used,
             "rating_change": self.rating_change,
             "message": self.message,
             "visits": self.visits,
@@ -355,8 +338,15 @@ def make_handler(game, library=None):
             if self.path == "/api/state":
                 with game.lock:
                     return self._json(game.state())
-            if self.path in ("/", "/index.html"):
+            if path in ("/", "/index.html"):
+                # React 빌드가 있으면 그걸, 없으면 예전 한 장짜리 화면
+                if (APP_DIST / "index.html").exists():
+                    return self._file(APP_DIST / "index.html", "text/html; charset=utf-8")
                 return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+            if path == "/classic":
+                return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+            if path.startswith("/assets/"):
+                return self._static(APP_DIST, path)
             if self.path == "/board.js":
                 return self._file(WEB_DIR / "board.js", "text/javascript; charset=utf-8")
             self.send_error(404)
@@ -404,8 +394,6 @@ def make_handler(game, library=None):
             if self.path == "/api/move":
                 think_ms = body.get("think_ms")
                 return self._json(game.user_move(str(body.get("move", "")), think_ms=think_ms))
-            if self.path == "/api/hint":
-                return self._json(game.hint())
             if self.path == "/api/resign":
                 return self._json(game.resign())
             self.send_error(404)
@@ -417,6 +405,13 @@ def make_handler(game, library=None):
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
+
+        def _static(self, root, path):
+            target = (root / path.lstrip("/")).resolve()
+            # ../ 로 빌드 폴더 밖을 읽지 못하게
+            if root.resolve() not in target.parents or not target.is_file():
+                return self.send_error(404)
+            return self._file(target, STATIC_TYPES.get(target.suffix, "application/octet-stream"))
 
         def _file(self, path, content_type):
             raw = path.read_bytes()
@@ -440,6 +435,7 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--data-dir", default=str(ROOT / "data"), help="대국 기록·레이팅 저장 위치")
     p.add_argument("--library-dir", default=str(LIBRARY_DIR), help="명국 SGF 폴더")
+    p.add_argument("--rank-model", help="실력 추정에 직접 학습한 모델 사용 (예: models/rank_policy.pt)")
     args = p.parse_args(argv)
 
     human_model = str(HUMAN_MODEL) if HUMAN_MODEL.exists() else None
@@ -450,7 +446,13 @@ def main(argv=None):
     with KataGoEngine.from_paths(args.katago, args.model, args.config, human_model=human_model) as engine:
         print("KataGo 초기화 중... (첫 실행은 20초 정도 걸림)")
         engine.analyze(Board(9), max_visits=1)  # 미리 데워서 첫 수 대기를 없앤다
-        game = Game(engine, records, human_available=bool(human_model), calibration=calibration)
+        rank_policy = None
+        if args.rank_model:
+            from .model import NetPolicy  # torch는 이 옵션을 쓸 때만 불러온다
+
+            rank_policy = NetPolicy(args.rank_model).human_policies
+            print(f"실력 추정: 직접 학습한 모델 {args.rank_model}")
+        game = Game(engine, records, human_available=bool(human_model), calibration=calibration, rank_policy=rank_policy)
         # 기보 분석은 대국 엔진을 막지 않도록 KataGo를 하나 더 띄운다 (처음 분석할 때)
         library = Library(
             args.library_dir,

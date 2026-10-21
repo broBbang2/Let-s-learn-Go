@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 
 from .sgf import SgfError, dump, parse
+from .skill import CONTESTED_WINRATE
 
 ANALYSIS_VISITS = 100
 ANALYSIS_VERSION = 1  # 분석 형식이 바뀌면 올려서 캐시를 무효화
@@ -99,6 +100,9 @@ class Library:
             if not re.fullmatch(r"[\w.\-]+", stem) or not (self.dir / f"{stem}.sgf").is_file():
                 return None
             g = parse((self.dir / f"{stem}.sgf").read_text(encoding="utf-8", errors="replace"))
+            # 널리 알려진 명장면 메모 (<이름>.notes.json, {"수 번호": "설명"}). 기보 원본은 건드리지 않는다
+            notes_path = self.dir / f"{stem}.notes.json"
+            g["notes"] = json.loads(notes_path.read_text(encoding="utf-8")) if notes_path.exists() else {}
             if g["setup"]:
                 g["warning"] = "치석(배치 돌)이 있는 기보는 아직 정확히 재생하지 못합니다."
             return {"id": game_id, **g}
@@ -112,6 +116,7 @@ class Library:
                         "meta": {"RE": row["result"], "DT": row["game_id"][:8]},
                         "moves": [tuple(m) for m in row["moves"]],
                         "comments": {},
+                        "notes": {},
                         "setup": False,
                     }
         return None
@@ -128,7 +133,8 @@ class Library:
         if cache.exists():
             data = json.loads(cache.read_text())
             if data.get("version") == ANALYSIS_VERSION:
-                return {"state": "done", **data}
+                # 주요 장면은 국면 데이터에서 매번 다시 뽑는다 → 기준을 바꿔도 재분석이 필요 없다
+                return {"state": "done", **data, **key_moments(data["turns"], data["profile"])}
         with self.lock:
             job = self.jobs.get(game_id)
             return dict(job) if job else {"state": "none"}
@@ -206,7 +212,30 @@ def summarize_analysis(g, results, profile):
             }
         turns.append(turn)
 
-    played = [t for t in turns if "next" in t and t["next"]["move"] != "pass"]
+    return {
+        "version": ANALYSIS_VERSION,
+        "visits": ANALYSIS_VISITS,
+        "profile": profile,
+        "total": n,
+        "done": n,
+        "turns": turns,
+        **key_moments(turns, profile),
+    }
+
+
+def key_moments(turns, profile):
+    """결정적 수와 예상 밖의 명수. 승부가 이미 기운 국면의 수는 뺀다(skill과 같은 접전 기준).
+
+    끝난 판에선 어떤 수를 둬도 손실이 거의 없어서 "드물지만 손해 없는 수"가 쏟아지고,
+    큰 승률 변화도 의미가 없기 때문이다.
+    """
+    lo, hi = CONTESTED_WINRATE
+
+    def contested(t):
+        wr = t["winrate_black"] if t["next"]["color"] == "B" else 1 - t["winrate_black"]
+        return lo <= wr <= hi
+
+    played = [t for t in turns if "next" in t and t["next"]["move"] != "pass" and contested(t)]
     turning = sorted(
         (t for t in played if t["next"]["winrate_loss"] >= TURNING_MIN_WINRATE_LOSS),
         key=lambda t: -t["next"]["winrate_loss"],
@@ -241,12 +270,6 @@ def summarize_analysis(g, results, profile):
         return {"turn": t["turn"], "move_number": num, "text": text}
 
     return {
-        "version": ANALYSIS_VERSION,
-        "visits": ANALYSIS_VISITS,
-        "profile": profile,
-        "total": n,
-        "done": n,
-        "turns": turns,
         "turning_points": sorted((moment(t, "turning") for t in turning), key=lambda m: m["turn"]),
         "surprises": sorted((moment(t, "surprise") for t in surprising), key=lambda m: m["turn"]),
     }

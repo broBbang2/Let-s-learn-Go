@@ -35,7 +35,7 @@ def choose_move(candidates, target_loss, temperature):
 3. ✅ **사용자 실력 측정** — 수당 손실 계산, 레이팅 저장
 4. ✅ **난이도 조절** — v2 목표 손실 + v3 human 모델 + AI 리그전 — 목표 손실 방식 → human 모델 방식으로 개선
 5. ⬜ **웹 게임화** (프론트엔드)
-6. ⬜ (선택, 학습용) **9x9 미니 AlphaZero를 PyTorch로 직접 학습** — MCTS + 정책/가치망 이해용. ML 로드맵 Phase 4~5(CNN, ResNet) 이후에 붙이면 좋음
+6. 🔶 **직접 학습한 모델** — 급수 조건부 수 예측(Maia-2 방식, 지식 증류) 진행 중. 9x9 미니 AlphaZero는 이후 — MCTS + 정책/가치망 이해용. ML 로드맵 Phase 4~5(CNN, ResNet) 이후에 붙이면 좋음
 
 ## 현재 상태 (4단계 완료)
 
@@ -55,8 +55,17 @@ def choose_move(candidates, target_loss, temperature):
 - `adaptive_go/arena.py` — AI끼리 리그전 + v3 급수 보정 (`python -m adaptive_go.arena --help`)
 - `adaptive_go/rank_estimate.py` — 대국 중 실시간 급수 추정 (human 정책 베이즈 갱신)
 - `adaptive_go/estimate_eval.py` — 급수 아는 봇으로 추정 정확도 검증
+- `adaptive_go/explain.py` — AI 수·내 수·실력 추정의 근거 정리
+- `adaptive_go/sgf.py` — SGF 읽기(본 수순)·쓰기
+- `adaptive_go/library.py` — 기보 보관함: 명국·내 대국 목록, 판 전체 분석(백그라운드, 캐시)
+- `web/board.js` — 바둑판 SVG 공용 렌더러, `web/library.html` — 기보 보관함 화면 (`/library`)
+- `adaptive_go/features.py` — 국면 → 신경망 입력 12평면, 8대칭 데이터 증강
+- `adaptive_go/datagen.py` — KataGo human 모델로 급수별 19줄 대국 생성 → 학습 데이터(npz)
+- `adaptive_go/model.py` — 급수 조건부 수 예측 ResNet + `NetPolicy`(human_policies와 같은 인터페이스)
+- `adaptive_go/train.py` — PyTorch 학습(mps), `adaptive_go/eval_model.py` — teacher와 실력 추정 비교
+- `library/` — 명국 SGF (+ `<이름>.notes.json` 명장면 메모, 출처는 `library/SOURCES.md`)
 - `models/b18c384nbt-humanv0.bin.gz` — KataGo human 모델 (v1.15.0 릴리스, sha256 637746e4…)
-- `tests/test_board.py`, `test_engine.py`, `test_server.py`, `test_skill.py`, `test_rating.py`, `test_difficulty.py`, `test_players.py`, `test_rank_estimate.py`, `test_estimate_eval.py` — pytest 81개, 전부 통과
+- `tests/test_board.py`, `test_engine.py`, `test_server.py`, `test_skill.py`, `test_rating.py`, `test_difficulty.py`, `test_players.py`, `test_rank_estimate.py`, `test_estimate_eval.py`, `test_sgf.py`, `test_library.py`, `test_features.py`, `test_datagen.py`, `test_model.py` — pytest 115개, 전부 통과
 - `tests/fake_katago.py` — KataGo 없이 JSON 프로토콜을 흉내 내는 가짜 엔진 (테스트용)
 
 `board.py` 요약:
@@ -155,13 +164,15 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
 - 개선안: 보정을 자기 대국 대신 **고정 상대(예: v3(5k))와의 대국**으로, 판 수를 늘려서
 
 
-### 대국 중 실력 추정 + 힌트 (5단계 전 기능 추가)
+### 대국 중 실력 추정 + 형세 표시 (5단계 전 기능 추가)
 
-- **실시간 급수 추정** (`rank_estimate.py`): 급수 격자 12개(20k…9d)에 대해 사용자 수마다 `log P(급수) += 0.5 · log p_human(그 수 | 급수)`. human 정책 12개는 `engine.human_policies`로 한 번에 질의(maxVisits=1, 약 0.09초). 정책 0인 수는 1e-4 바닥값. pass·힌트 본 수는 갱신 안 함
+- **힌트는 제거함** (사용자 결정, 2026-10-21): `/api/hint`·자동 힌트·힌트 카드 모두 삭제. 예전 기록의 `hint_used`/`hint_followed` 수는 손실 통계에서 계속 제외
+- **형세(영역) 표시가 대신함**: 매 수(AI 응수 후) `LIVE_OWNERSHIP_VISITS=64`로 ownership 질의 → `state.ownership`. React 판(`app/src/components/GoBoard.tsx`)이 빈 칸을 칸 크기 그대로 흑/백으로 칠함(확실할수록 진하게, |값|0.15부터, 최대 불투명도 0.5), 상대 땅 위에 선 돌(|값|>0.6)은 작은 네모로 "잡힐 위기" 표시. 상단 "형세 보기"로 끄고 켬(기본 켜짐, localStorage)
+- **형세 카드** (`TerritoryCard`): 내 땅 | 미정 | 상대 땅 막대와 "약 N칸". 칸마다 내 땅일 정도(0~1)를 더한 **예상 영역** — 확실한 칸(>0.5)만 세면 초반엔 361칸 중 342칸이 미정이라 의미가 없었음. 잡힐 위기 돌 개수도 표시
+
+- **실시간 급수 추정** (`rank_estimate.py`): 급수 격자 12개(20k…9d)에 대해 사용자 수마다 `log P(급수) += 0.5 · log p_human(그 수 | 급수)`. human 정책 12개는 `engine.human_policies`로 한 번에 질의(maxVisits=1, 약 0.09초). 정책 0인 수는 1e-4 바닥값. pass는 갱신 안 함
 - 판 사이: 사후분포를 지수 0.5로 평평하게 해서 다음 판 사전분포로 (`data/rank_estimate.json`)
 - **AI 급수 실시간 조정**: 사람형 모드에서 매 수 `AI 급수 = 추정 평균(점) + rank_offset`. rank_offset은 판 결과로 학습 (`difficulty.json`의 `human.rank_offset`, 지면 −0.9점·이기면 +1.1점). 가장 약한 급수로도 부족하면 혼합
-- **힌트** (`POST /api/hint`, 단축키 H): 추정 급수 +3점 프로필로 분석 → 최선 대비 1집 이하 & 탐색 2회 이상 후보를 사람 확률 순으로 최대 3개. 판에 A/B/C, 패널에 손실·승률·사람 선택률·예상 진행(마우스 올리면 판에 번호 돌)
-- 힌트 본 수는 `moves.jsonl`에 `hint_used: true` → 실력 추정·목표 손실 통계에서 제외
 - **검증** (`estimate_eval`, 9x9, v3 봇을 사용자로, 16판 32기록, 돌 거두기 없이): w=0.5에서
 
   | 둔 수 | 3 | 5 | 10 | 20 | 30 |
@@ -172,9 +183,55 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
   30수 뒤 급수별 평균: 5k→5k, 1k→1k, 3d→3d, 15k→10k(하수를 강하게 보는 치우침). 가중치 0.3/0.5/1.0 차이는 작음.
   **봇은 추정에 쓰는 모델에서 수를 뽑으므로 실제 사람보다 쉬운 조건(낙관적 상한)**. 첫 실행은 같은 급수끼리 25수 무렵 기권해 한쪽당 13수뿐이라 돌 거두기를 끄고 재실행
 
+### 19줄 기본 + 수의 근거 + 기보 보관함
+
+- 웹 대국 기본: **19x19, 덤 7.5** (human 모델이 19줄 사람 기보로 학습되어 추정·사람형 AI가 이쪽에서 더 자연스러움)
+- **수 해설 카드** (`explain.py`): AI 수마다 방식별 근거 문장(예: "3급 사람 모델이 이 수를 둘 확률 23%(2위)… 최선수 C15 대비 0.1집") + 후보 표(손실·AI 승률·사람 선택률·탐색 수, 마우스 올리면 판에 위치). 내 수는 최선수와 예상 진행, 실력 추정은 급수별 "이 수를 둘 확률" 막대
+- **기보 보관함** (`/library`): 명국과 끝난 내 대국 목록 → 재생(◀▶, 슬라이더, ←→ 키) → "분석 시작"으로 판 전체 KataGo 분석
+  - 엔진 `analyze_game`: `analyzeTurns`로 질의 하나에 전 국면, 진행률 콜백. 대국 엔진과 별도 KataGo 프로세스. 100 visits, 19줄 180수 약 2분
+  - 국면별: 흑 승률·집, KataGo 최선수(판에 "AI")와 예상 진행. 실제 수: 손실, 엔진 후보 순위, **그 시대 프로 확률**(human 모델 `proyear_<기보 연도>`, 1800~2023 지원 — 같은 국면에서 1846·1933년 프로는 소목, 2023년은 화점 선호를 실측 확인)
+  - 결정적 수(승률 8% 이상 손실 상위 5), 예상 밖의 명수(프로 확률 5% 미만 & 손실 0.5집 이하, 10수 이후, 상위 3), 명장면 메모(`notes.json`, 사람이 쓴 설명). 둘 다 **접전 국면(둘 쪽 승률 5~95%)만** — 끝난 판의 수가 뽑히던 문제 수정. 캐시된 국면 데이터에서 읽을 때마다 다시 계산하므로 기준을 바꿔도 재분석 불필요 (2국에선 이 기준으로 37수 P10이 자동으로 뽑힘)
+  - 흑 승률 그래프: 단일 계열 2px 선, 50% 기준선, 십자선 툴팁, 클릭 이동. 색은 dataviz 검증 통과(#1a7f5a / #c2410c), 표식은 모양(원·마름모·별)으로도 구분
+  - 결과 캐시 `data/library_analysis/<id>.json`, 내 대국은 SGF로 내보내기 (`/api/library/<id>/sgf`)
+- **이세돌 vs 알파고 5국** (`library/2016-alphago-lee-sedol-1..5.sgf`, 사용자 승인 후 CWI 기보 아카이브에서 받음): 수 수 일치, 4국 78수 = 백 L11, 2국 37수 = 흑 P10 확인
+  - 4국 KataGo 분석: 78수 L11은 2016년 프로 확률 0.68%(22위), KataGo 손실 0집·후보 7위(최선 J11), 직전 흑 승률 97%. 승부를 가른 건 알파고 쪽 89수 R9(−26%)·93수 S9(−25%)
+
+### React 대국 화면 (`app/`, 2026-10-21)
+
+- `web/index.html`(한 장짜리)을 **Vite + React + TypeScript + Motion**으로 옮김. 기능은 그대로(패널·해설; 힌트·단축키 H는 이후 제거되고 형세 표시로 대체), 예전 화면은 `/classic`
+- 서버: `app/dist/index.html`이 있으면 `/`에서 React 화면, `/assets/*` 정적 서빙(폴더 밖 경로 차단). 기보 보관함(`/library`)은 아직 예전 HTML
+- **실시간 형세**: AI 응수 뒤 `LIVE_OWNERSHIP_VISITS=32`로 ownership을 한 번 더 질의 → `state.ownership`. 빈 자리에 흑/백 반투명 칠, 바뀔 땐 방금 둔 자리에서 거리 × 28ms씩 늦게 전환(번지는 효과). 상단 "형세 보기"로 끔
+- **애니메이션** (`app/src/components/GoBoard.tsx`): 착수 스프링 드롭 + 파문, 따낸 돌은 흔들림 → 떠오르며 사라짐(따낸 자리에서 가까운 순 35ms 시차), 마지막 수 표시 지연 등장, 호버 미리보기, 둘 수 없는 자리는 빨간 점선 + 클릭 시 흔들림과 이유 문구. `prefers-reduced-motion`이면 줄임
+- **TS 규칙 엔진** (`app/src/go/rules.ts`): board.py와 같은 규칙. 서버 history를 재생해 돌마다 id(놓인 수 번호)를 붙이고, 직전 렌더와 비교해 새 돌·따낸 돌을 안다. 내 수는 서버 응답 전에 바로 두고 따낸 돌도 바로 들어냄. 재생 결과가 서버 판과 다르면 서버 판을 씀
+- **feedback 모듈** (`app/src/feedback.ts`): `place / capture(n) / illegal` 한곳에 모음. 지금은 Web Audio 합성음 + `navigator.vibrate`(안드로이드만). 앱으로 옮길 때 여기에 햅틱 추가
+- 실행: `cd app && npm install && npm run dev` → http://localhost:5173 (API는 8000으로 프록시) / 배포용 `npm run build` → Python 서버가 바로 서빙. 테스트 `npm test`(규칙 5개), 서버 pytest 108개 통과
+
+### 직접 학습한 모델: 급수 조건부 수 예측 (Maia-2 방식, 지식 증류)
+
+- **목적**: 국면 + 급수 → "그 급수 사람이 둘 수"의 분포. 베이즈 실력 추정에 KataGo human 모델 대신 꽂을 수 있게 (`NetPolicy.human_policies`, 서버 `--rank-model models/rank_policy.pt`)
+- **데이터** (`datagen.py`, `data/train/20261021-163648`): KataGo human 모델로 19줄 대국을 급수 12개 × 80판 = 960판, 24만 8천 국면 (46분, 압축 17MB). 수는 사람 정책에서 추출(0.5% 미만 제외, maxVisits=1), 정답은 그 국면 사람 정책 상위 16개(증류). 판당 260수 상한
+- **입력** (`features.py`): 둘 차례 기준 12평면 — 내/상대/빈, 내·상대 그룹 활로 1/2/3+, 직전 두 수, 패 금지점 + 상수 1 평면. 8대칭 증강
+- **모델** (`model.py`): ResNet 96채널 × 8블록(135만 파라미터, 5.4MB). 급수 임베딩을 블록마다 채널 편향으로 주입. 둘 수 없는 점 −inf 마스크
+- **학습** (`train.py`, mps): AdamW + OneCycle 2e-3, 배치 256, 12에폭 약 37분. 검증 = 게임 번호 MD5 해시 10%
+  - 검증 지표(12에폭): teacher 1순위 일치 **62.8%**, 실제 둔 수 1순위 **42.1%**, 손실 2.054 (아직 감소 중 → 더 키우거나 더 돌릴 여지)
+  - 64×6(46만)은 58.9% / 40.6%
+- **검증 분할 버그 2번 수정**: "게임 번호 끝자리 0" → 번호 규칙(라운드×12+급수) 때문에 짝수 급수만 검증에 들어감. Knuth 곱셈 해시도 12 간격 입력에서 급수별로 0~20판으로 치우침 → MD5로 해결(급수별 6~11판)
+- **실력 추정 비교** (`eval_model.py`, 급수당 4판 48판 96기록, w=0.5, 가장 그럴듯한 급수가 ±1칸 안 / 평균 오차 점):
+
+  | 둔 수 | 3 | 5 | 10 | 20 | 30 |
+  |---|---|---|---|---|---|
+  | 우리 모델 (5.4MB) | 41% / 5.8 | 56% / 4.7 | 66% / 3.3 | 73% / 2.3 | 75% / 2.1 |
+  | KataGo human (99MB) | 48% / 5.5 | 72% / 4.3 | 78% / 2.6 | 89% / 1.7 | 94% / 1.5 |
+
+  크기 1/18로 초반(3~10수)은 teacher의 85% 수준, 30수에선 격차가 벌어짐. **판이 teacher로 생성돼 teacher에 유리한 조건**. 기본 서버는 여전히 KataGo human 모델로 추정
+
+- 진행 확인 도구 `adaptive_go/progress.py` (`python -m adaptive_go.progress -f`): 작업 로그를 `logs/`에 같이 남김 (사용자가 추가)
+
 ## 다음 할 일
 
-1. 보정을 고정 상대 대국으로 다시 (급수당 10판 이상) → 급수별 손실표 안정화
+1. 자체 모델 개선: 데이터 늘리기(급수당 200판+), 더 큰 모델·더 긴 학습, 급수 구분을 직접 겨냥한 보조 손실(같은 국면에서 급수별 분포 차이)
+2. 실제 사람 기보(급수 붙은 공개 기보)로 검증 → teacher 홈 경기 문제 해소
+3. 보정을 고정 상대 대국으로 다시 (급수당 10판 이상) → 급수별 손실표 안정화
 2. 실제 사용자 대국 데이터 쌓기 → 보정 계수·레벨 레이팅이 실제로 수렴하는지 확인
 3. 5단계(웹 게임화): 대국 목록·복기 화면, 수별 손실 그래프, 세션/다중 사용자
 

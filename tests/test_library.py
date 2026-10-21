@@ -81,3 +81,25 @@ def test_analysis_runs_in_background_and_is_cached(lib):
 
 def test_start_unknown_game(lib):
     assert lib.start("f-nope")["state"] == "error"
+
+
+def test_notes_are_loaded(lib, tmp_path):
+    (tmp_path / "lib" / "ear.notes.json").write_text('{"2": "famous move"}')
+    assert lib.load("f-ear")["notes"] == {"2": "famous move"}
+    assert lib.load("m-20261021-120000-abc")["notes"] == {}
+
+
+def test_key_moments_skip_decided_positions():
+    from adaptive_go.library import key_moments
+
+    def turn(t, wr_black, color, loss, wr_loss, p):
+        nxt = {"color": color, "move": "A1", "loss": loss, "winrate_loss": wr_loss, "human_p": p}
+        return {"turn": t, "winrate_black": wr_black, "best": "B2", "next": nxt}
+
+    turns = [turn(20, 0.5, "B", 0.0, 0.0, 0.001),   # 접전 중 드문 좋은 수 → 명수
+             turn(21, 0.5, "W", 5.0, 0.3, 0.2),     # 접전 중 큰 실수 → 결정적 수
+             turn(200, 0.99, "B", 0.0, 0.0, 0.0001),  # 흑이 이미 이긴 판 → 제외
+             turn(201, 0.99, "W", 9.0, 0.009, 0.2)]   # 백이 이미 진 판(백 승률 1%) → 제외
+    m = key_moments(turns, "proyear_2016")
+    assert [x["move_number"] for x in m["surprises"]] == [21]
+    assert [x["move_number"] for x in m["turning_points"]] == [22]

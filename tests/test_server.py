@@ -173,27 +173,23 @@ def test_user_move_updates_rank_estimate(engine, records):
     s = g.user_move("E5")
     assert s["estimate"]["moves"] == 1
     assert records.load_json("rank_estimate.json")["current"]["moves"] == 1
-    assert records.read("moves.jsonl")[0]["hint_used"] is False
+    assert "hint_shown" not in records.read("moves.jsonl")[0]
 
 
-def test_hint_suggests_good_human_moves_and_excludes_move_from_estimate(engine, records):
+def test_no_hint_api_and_live_territory_each_move(engine, records):
     g = Game(engine, records, rng=MaxRng(), human_available=True)
-    s = g.hint()
-    # 후보 중 손실 1집 이하이면서 탐색 2회 이상인 수: C3만 (D4는 1.5집 손해, pass는 탐색 1회)
-    assert [h["move"] for h in s["hints"]["moves"]] == ["C3"]
-    assert s["hints"]["moves"][0]["pv"] == ["C3", "D4"]
-    assert s["hint_used"]
-    s = g.user_move("C3")
-    assert s["estimate"]["moves"] == 0  # 힌트 본 수는 실력 추정에서 제외
-    assert s["hints"] is None and not s["hint_used"]
-    assert records.read("moves.jsonl")[0]["hint_used"] is True
-    assert records.recent_user_losses(10) == []  # 손실 통계에서도 제외
+    s = g.user_move("E5")
+    assert "hints" not in s and "auto_hint" not in s
+    # 매 수 형세(누구 땅인지)가 같이 온다. 가짜 엔진: 맨 윗줄 왼쪽만 흑 1.0, 나머지 백 -1.0
+    own = s["ownership"]
+    assert len(own) == 19 and own[18][0] == 1.0 and own[0][0] == -1.0  # 기본 19줄
 
 
-def test_hint_only_on_users_turn(engine, records):
-    g = Game(engine, records, rng=MaxRng(), human_available=True)
-    g.resign()
-    assert g.hint()["hints"] is None
+def test_legacy_hint_rows_still_excluded(records):
+    records._append("moves.jsonl", {"score_loss": 2.0, "winrate_before": 0.5, "hint_used": True})
+    records._append("moves.jsonl", {"score_loss": 3.0, "winrate_before": 0.5, "hint_followed": True})
+    records._append("moves.jsonl", {"score_loss": 1.0, "winrate_before": 0.5})
+    assert records.recent_user_losses(10) == [1.0]
 
 
 def test_ai_move_has_explanation(engine, records):
@@ -219,3 +215,31 @@ def test_user_move_explanation_and_estimate_evidence(engine, records):
     assert s["user_explain"]["summary"] == "엔진 최선수는 C3였고, 둔 수는 그보다 1.5집 손해로 평가됩니다."
     assert s["user_explain"]["best_pv"] == ["C3", "D4"]
     assert s["estimate_evidence"]["move"] == "D4" and s["estimate_evidence"]["probs"][0] == 0.6
+
+
+def test_live_ownership_after_ai_reply(game):
+    assert game.state()["ownership"] is None  # 아직 아무도 안 둠
+    s = game.user_move("E5")  # AI C3
+    own = s["ownership"]
+    assert len(own) == 9 and len(own[0]) == 9
+    assert own[8][0] == 1.0  # 가짜 엔진: A9만 흑
+    assert own[0][0] == -1.0
+
+
+def test_live_ownership_when_ai_moves_first(game):
+    s = game.new_game(size=9, komi=7.0, color=WHITE, mode=BEST)
+    assert s["ownership"] is not None
+
+
+def test_custom_rank_policy_is_used_for_estimate(engine, records):
+    calls = []
+
+    def fake_policy(board, profiles):
+        calls.append(len(profiles))
+        # 20급만 E5를 잘 둔다고 하는 정책 → 추정이 20급 쪽으로
+        return {p: {"E5": 0.9 if p == "rank_20k" else 0.01} for p in profiles}
+
+    g = Game(engine, records, rng=MaxRng(), human_available=True, rank_policy=fake_policy)
+    s = g.user_move("E5")
+    assert calls == [12]
+    assert s["estimate"]["rank"] == "20k" and s["estimate"]["source"] == "ours"

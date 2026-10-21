@@ -11,3 +11,11 @@ models/*.bin.gz
 analysis_logs/
 
 .DS_Store
+
+# React 대국 화면 (app/)
+app/node_modules/
+app/dist/
+
+# 생성 데이터·로그 (datagen으로 재생성 가능)
+data/train/
+logs/

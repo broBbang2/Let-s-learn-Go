@@ -1,10 +1,10 @@
-"""실행 중인 작업(리그전·추정 검증·서버) 진행상황 확인.
+"""실행 중인 작업(python -m adaptive_go.* — 리그전·데이터 생성·학습·서버 등) 진행상황 확인.
 
     python -m adaptive_go.progress            # 한 번 출력
     python -m adaptive_go.progress --watch 10 # 10초마다 갱신 (Ctrl+C로 종료)
     python -m adaptive_go.progress -f         # 작업이 시작되면 자동으로 로그 실시간 추적
 
-리그전·추정 검증은 실행하면 터미널 출력을 logs/<종류>-<시각>.log에도 같이 쓴다 (tee_stdout).
+리그전·추정 검증·데이터 생성·학습은 실행하면 터미널 출력을 logs/<종류>-<시각>.log에도 같이 쓴다 (tee_stdout).
 lsof로 작업이 열어 둔 그 로그(없으면 리다이렉트된 stdout 파일)를 찾아 마지막 `[i/N]` 줄을 읽는다.
 둘 다 없으면 리그전은 games.jsonl 줄 수로 대신 센다.
 """
@@ -19,7 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ARENA_DIR = ROOT / "data/arena"
 LOG_DIR = ROOT / "logs"
-JOB_PATTERN = re.compile(r"-m adaptive_go\.(arena|estimate_eval|server|play)\b(.*)")
+JOB_PATTERN = re.compile(r"-m adaptive_go\.(\w+)(.*)")
+NO_PROGRESS = ("server", "play")  # 진행률 개념이 없는 대화형 작업
 STEP_PATTERN = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)$")
 
 
@@ -94,7 +95,7 @@ def find_jobs():
         m = JOB_PATTERN.search(cmd)
         # 셸 래퍼(zsh -c "... -m adaptive_go.x ...")와 멀티프로세싱 워커는 제외
         is_python = "python" in Path(cmd.split()[0]).name.lower()
-        if m and is_python and "multiprocessing" not in cmd:
+        if m and is_python and "multiprocessing" not in cmd and m.group(1) != "progress":
             jobs.append({"pid": int(pid), "elapsed": _parse_etime(etime),
                          "kind": m.group(1), "args": m.group(2).strip()})
     return jobs
@@ -138,7 +139,7 @@ def latest_run_dir(prefix=""):
 def report_job(job):
     print(f"▶ {job['kind']} (pid {job['pid']})  {job['args']}")
     print(f"  경과: {_fmt_secs(job['elapsed'])}")
-    if job["kind"] in ("server", "play"):
+    if job["kind"] in NO_PROGRESS:
         return
 
     log = job_log(job["pid"])
@@ -240,14 +241,15 @@ def follow():
     while True:
         job = log = None
         for j in find_jobs():
-            if j["kind"] in ("arena", "estimate_eval") and j["pid"] not in followed:
+            if j["kind"] not in NO_PROGRESS and j["pid"] not in followed:
                 log = job_log(j["pid"])
                 if log:
                     job = j
                     break
         if not job:
             if not waiting:
-                print("작업 대기 중… (arena·estimate_eval이 시작되면 자동으로 표시, Ctrl+C로 종료)", flush=True)
+                print("작업 대기 중… (python -m adaptive_go.* 작업이 시작되면 자동으로 표시, Ctrl+C로 종료)",
+                      flush=True)
                 waiting = True
             time.sleep(1)
             continue

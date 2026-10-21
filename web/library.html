@@ -99,6 +99,8 @@
   .moment i { width: 8px; height: 8px; margin-top: 6px; }
   .dot { border-radius: 50%; background: var(--turning); }
   .diamond { background: var(--series); transform: rotate(45deg); }
+  .star { background: var(--ink); clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); width: 10px !important; height: 10px !important; }
+  .note-box { font-size: 13px; background: color-mix(in srgb, var(--ink) 6%, transparent); border-left: 3px solid var(--ink); padding: 6px 10px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -134,6 +136,7 @@
           <span class="move-no" id="move-no"></span>
         </div>
         <input type="range" id="slider" min="0" value="0">
+        <div class="note-box" id="note" hidden></div>
         <div class="comment" id="comment" hidden></div>
       </div>
 
@@ -152,7 +155,7 @@
             <svg class="chart" id="chart" aria-label="흑 승률 그래프"></svg>
             <div class="tooltip" id="tooltip" hidden></div>
           </div>
-          <div class="key"><span><i class="dot"></i>결정적 수</span><span><i class="diamond"></i>예상 밖의 명수</span></div>
+          <div class="key"><span><i class="dot"></i>결정적 수</span><span><i class="diamond"></i>예상 밖의 명수(자동)</span></div>
           <div id="here"></div>
         </div>
       </div>
@@ -202,7 +205,9 @@ async function showList() {
       card.innerHTML = `<div class="title"></div><div class="players"></div><div class="meta"></div>`;
       card.querySelector(".title").textContent = g.title;
       card.querySelector(".players").textContent = `흑 ${g.black} · 백 ${g.white}`;
-      card.querySelector(".meta").textContent = [g.date, g.event, g.result, `${g.size}줄 ${g.moves}수`].filter(Boolean).join(" · ");
+      // 제목에 이미 대회명이 있으면 메타에서 반복하지 않는다
+      const event = g.event && !g.title.startsWith(g.event) ? g.event : "";
+      card.querySelector(".meta").textContent = [g.date, event, g.result, `${g.size}줄 ${g.moves}수`].filter(Boolean).join(" · ");
       card.addEventListener("click", () => { location.hash = g.id; });
       box.appendChild(card);
     }
@@ -253,6 +258,8 @@ async function openGame(id) {
   const res = await fetch(`/api/library/${encodeURIComponent(id)}`);
   if (!res.ok) { location.hash = ""; return; }
   game = await res.json();
+  game.notes = game.notes || {};
+  game.comments = game.comments || {};
   positions = replay(game.size, game.moves);
   turn = 0;
   analysis = null;
@@ -295,6 +302,10 @@ function render() {
   $("move-no").textContent = t === 0 ? `0 / ${total}` : `${t} / ${total} · ${game.moves[t - 1][0] === "B" ? "흑" : "백"} ${game.moves[t - 1][1]}`;
   $("first").disabled = $("prev").disabled = t === 0;
   $("next").disabled = $("last").disabled = t === total;
+  // 명장면 메모: 그 수를 두기 직전(어떤 수가 나올지 생각해 볼 때)과 둔 직후에 보여준다
+  const note = game.notes[t + 1] ? `다음 ${t + 1}수: ${game.notes[t + 1]}` : game.notes[t] ? `${t}수: ${game.notes[t]}` : "";
+  $("note").hidden = !note;
+  $("note").textContent = note;
   const c = game.comments[t];
   $("comment").hidden = !c;
   $("comment").textContent = c || "";
@@ -345,7 +356,7 @@ function renderHere() {
     const engine = n.engine_rank ? `KataGo 후보 ${n.engine_rank}위` : "KataGo 후보 밖";
     const human = n.human_rank ? `${pct(n.human_p)} (${n.human_rank}위)` : pct(n.human_p);
     html += `<div class="reason"><b>다음 수 ${t + 1}. ${who} ${n.move}</b>
-      <div class="kv"><span>엔진 평가</span><b>${engine} · 손실 ${n.loss.toFixed(1)}집 · 승률 −${pct(n.winrate_loss)}</b></div>
+      <div class="kv"><span>엔진 평가</span><b>${engine} · 손실 ${n.loss.toFixed(1)}집 · ${n.winrate_loss < 0.005 ? "승률 그대로" : `승률 −${pct(n.winrate_loss)}`}</b></div>
       <div class="kv"><span>${era}년 프로라면</span><b>이 수를 둘 확률 ${human}</b></div></div>`;
     if (a.best !== n.move && a.best !== "pass") {
       html += `<div class="pv" id="best-pv">KataGo 최선 ${a.best} (판에 AI 표시) · 예상 진행 ${a.best_pv.join(" → ")}</div>`;
@@ -362,7 +373,15 @@ function renderHere() {
 }
 
 function renderMoments() {
+  const turns = analysis.turns;
+  const notes = Object.entries(game.notes).map(([num, text]) => {
+    const t = +num - 1, nx = turns[t] && turns[t].next;
+    const era = analysis.profile.replace("proyear_", "");
+    const view = nx ? ` KataGo: 손실 ${nx.loss.toFixed(1)}집(후보 ${nx.engine_rank ? `${nx.engine_rank}위` : "밖"}), ${era}년 프로 확률 ${pct(nx.human_p)}.` : "";
+    return { turn: t, text: `${num}수 명장면 — ${text}${view}`, kind: "star" };
+  });
   const list = [
+    ...notes,
     ...analysis.turning_points.map((m) => ({ ...m, kind: "dot" })),
     ...analysis.surprises.map((m) => ({ ...m, kind: "diamond" })),
   ].sort((a, b) => a.turn - b.turn);
