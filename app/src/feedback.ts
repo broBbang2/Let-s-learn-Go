@@ -1,9 +1,11 @@
 // 착수·따냄·불법수의 "손맛"을 한곳에 모은다.
 //
 // 지금(웹): 실제 바둑돌 녹음(public/sounds, KaTrain MIT) + 안드로이드 브라우저면 진동.
-//          녹음을 아직 못 불러왔으면 Web Audio 합성음으로 대신한다.
+//          녹음을 아직 못 불러왔으면 짧은 잡음 충격음으로 대신한다.
 // 나중(앱): React Native로 옮길 때 이 함수들 안에 햅틱 한 줄씩만 추가하면 된다.
 // 화면 애니메이션은 GoBoard가 돌의 등장·퇴장으로 처리하고, 여기서는 감각 신호만 낸다.
+//
+// 바둑돌 소리는 음정 없는 "탁"이다. 사인파 공명을 쓰면 "띵·띠링"처럼 들리므로 쓰지 않는다.
 
 const STORAGE_KEY = "adaptive-go:sound";
 
@@ -35,51 +37,56 @@ function audio(): AudioContext | null {
   if (!enabled || typeof AudioContext === "undefined") return null;
   ctx ??= new AudioContext();
   if (ctx.state === "suspended") void ctx.resume();
-  loadSamples(ctx);
+  decodeSamples(ctx);
   return ctx;
 }
 
+const jitter = (v: number, r: number) => v * (1 + (Math.random() * 2 - 1) * r);
+
 // ---------- 녹음 ----------
 
-const SAMPLE_FILES = {
-  stones: ["stone1", "stone2", "stone3", "stone4", "stone5"],
-  capture: ["capturing"],
-};
-const samples: { stones: AudioBuffer[]; capture: AudioBuffer[] } = { stones: [], capture: [] };
-let loading = false;
+const STONE_FILES = ["stone1", "stone2", "stone3", "stone4", "stone5"];
+const stones: AudioBuffer[] = [];
+let decoding = false;
 
-function loadSamples(a: AudioContext) {
-  if (loading) return;
-  loading = true;
-  for (const kind of ["stones", "capture"] as const) {
-    for (const name of SAMPLE_FILES[kind]) {
-      fetch(`/sounds/${name}.wav`)
-        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
-        .then((buf) => a.decodeAudioData(buf))
-        .then((b) => samples[kind].push(b))
-        .catch(() => {
-          /* 못 불러오면 합성음을 계속 쓴다 */
-        });
-    }
+// 파일은 페이지를 열자마자 받아 두고(소리 허용 전에도 가능), 소리가 허용되면 바로 디코딩한다
+const raw: Promise<ArrayBuffer | null>[] =
+  typeof fetch === "undefined"
+    ? []
+    : STONE_FILES.map((name) =>
+        fetch(`/sounds/${name}.wav`)
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
+          .catch(() => null),
+      );
+
+function decodeSamples(a: AudioContext) {
+  if (decoding) return;
+  decoding = true;
+  for (const p of raw) {
+    p.then((buf) => buf && a.decodeAudioData(buf))
+      .then((b) => b && stones.push(b))
+      .catch(() => {
+        /* 못 불러오면 대체음을 계속 쓴다 */
+      });
   }
 }
 
-// 브라우저는 사용자가 한 번 누른 뒤에야 소리를 허용하므로, 첫 클릭 때 미리 녹음을 불러 둔다 (첫 착수부터 녹음으로)
+// 브라우저는 사용자가 한 번 누른 뒤에야 소리를 허용하므로, 첫 클릭 때 디코딩해 둔다 (첫 착수부터 녹음으로)
 if (typeof window !== "undefined") window.addEventListener("pointerdown", () => audio(), { once: true });
 
 let lastStone = -1;
 
-/** 녹음 하나를 재생. 매번 속도(=음높이)와 세기를 조금씩 바꿔 같은 소리가 반복되지 않게 */
-function playSample(list: AudioBuffer[], at: number, gain: number): boolean {
+/** 착수 녹음 하나를 재생. rate는 재생 속도(높을수록 작고 가벼운 소리) */
+function playStone(at: number, gain: number, rate = 1): boolean {
   const a = audio();
-  if (!a || !list.length) return false;
+  if (!a || !stones.length) return false;
   // 같은 녹음이 연달아 나오지 않게
-  let i = Math.floor(Math.random() * list.length);
-  if (list.length > 1 && i === lastStone) i = (i + 1) % list.length;
-  if (list === samples.stones) lastStone = i;
+  let i = Math.floor(Math.random() * stones.length);
+  if (stones.length > 1 && i === lastStone) i = (i + 1) % stones.length;
+  lastStone = i;
   const src = a.createBufferSource();
-  src.buffer = list[i];
-  src.playbackRate.value = jitter(1, 0.03);
+  src.buffer = stones[i];
+  src.playbackRate.value = jitter(rate, 0.03);
   const g = a.createGain();
   g.gain.value = jitter(gain, 0.08);
   src.connect(g).connect(a.destination);
@@ -87,118 +94,25 @@ function playSample(list: AudioBuffer[], at: number, gain: number): boolean {
   return true;
 }
 
-// ---------- 합성 (녹음을 불러오기 전 대체용, 둘 수 없는 자리 "톡") ----------
-//
-// 실제 착수음은 세 겹이다.
-// 1. 돌이 판에 닿는 순간의 날카로운 "딱": 돌(조개·슬레이트)의 고음 공명, 20ms 안에 사라짐
-// 2. 나무판 몸통의 울림: 비자나무 판의 저·중음 공명 여러 개가 100~200ms 동안 감쇠 → "나무 판" 느낌
-// 3. 돌이 자리 잡으며 한 번 더 나는 작은 딱 (30~55ms 뒤)
-// 공명마다 감쇠하는 사인파 하나씩(모드)을 만들어 합친다. 매번 주파수·세기를 조금씩 흔들어 같은 소리가 반복되지 않게.
+// ---------- 대체음: 음정 없는 짧은 잡음 충격 ----------
 
-/** 판 몸통 공명 [주파수 Hz, 세기, 감쇠 시간 s] — 두꺼운 원목 판의 비조화 모드 */
-const BOARD_MODES: [number, number, number][] = [
-  [185, 1.0, 0.17],
-  [403, 0.62, 0.12],
-  [688, 0.42, 0.085],
-  [1046, 0.3, 0.06],
-  [1530, 0.2, 0.045],
-  [2210, 0.12, 0.03],
-];
-/** 돌 자체의 고음 공명 — 단단하고 작은 물체라 높고 짧다 */
-const STONE_MODES: [number, number, number][] = [
-  [2950, 1.0, 0.022],
-  [4380, 0.7, 0.016],
-  [5720, 0.45, 0.012],
-  [7300, 0.25, 0.008],
-];
-
-const jitter = (v: number, r: number) => v * (1 + (Math.random() * 2 - 1) * r);
-
-let master: GainNode | null = null;
-
-/** 모든 소리가 지나가는 출력단: 아주 높은 잡음을 살짝 깎고, 여러 공명이 겹쳐도 찢어지지 않게 리미터 */
-function out(a: AudioContext): AudioNode {
-  if (!master || master.context !== a) {
-    master = a.createGain();
-    master.gain.value = 0.6;
-    const lp = a.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 9000;
-    const limit = a.createDynamicsCompressor();
-    limit.threshold.value = -6;
-    limit.ratio.value = 12;
-    limit.attack.value = 0.001;
-    limit.release.value = 0.05;
-    master.connect(lp).connect(limit).connect(a.destination);
-  }
-  return master;
-}
-
-/** 감쇠하는 사인파 묶음 하나 (공명 모드들) */
-function modes(a: AudioContext, t: number, list: [number, number, number][], gain: number, pitch: number, decayScale = 1) {
-  for (const [f, amp, decay] of list) {
-    const osc = a.createOscillator();
-    osc.frequency.value = jitter(f * pitch, 0.025);
-    const g = a.createGain();
-    const d = jitter(decay * decayScale, 0.1);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(gain * amp, t + 0.0015); // 1.5ms 만에 최대 (딸깍하는 잡음 없이 빠른 어택)
-    g.gain.exponentialRampToValueAtTime(0.0001, t + d * 5);
-    osc.connect(g).connect(out(a));
-    osc.start(t);
-    osc.stop(t + d * 5 + 0.01);
-  }
-}
-
-/** 충돌 순간의 짧은 잡음 (접촉음). center 근처 대역만 남긴다 */
-function contact(a: AudioContext, t: number, gain: number, center: number, len = 0.006) {
+/** 대역을 거른 아주 짧은 잡음 하나 (len초, center Hz 근처) */
+function click(at: number, gain: number, center: number, len: number) {
+  const a = audio();
+  if (!a) return;
   const buf = a.createBuffer(1, Math.ceil(a.sampleRate * len), a.sampleRate);
   const data = buf.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 4);
   const src = a.createBufferSource();
   src.buffer = buf;
   const band = a.createBiquadFilter();
   band.type = "bandpass";
   band.frequency.value = center;
-  band.Q.value = 0.9;
+  band.Q.value = 0.7;
   const g = a.createGain();
   g.gain.value = gain;
-  src.connect(band).connect(g).connect(out(a));
-  src.start(t);
-}
-
-/** 돌을 판에 놓는 "딱 —". gain은 세기, pitch는 1이 보통 */
-function stoneOnBoard(at: number, gain = 1, pitch = 1) {
-  const a = audio();
-  if (!a) return;
-  const t = a.currentTime + at;
-  const g = jitter(gain, 0.12);
-  contact(a, t, g * 0.9, 3800 * pitch);
-  modes(a, t, STONE_MODES, g * 0.22, pitch);
-  modes(a, t, BOARD_MODES, g * 0.34, pitch);
-  // 자리 잡는 작은 두 번째 딱
-  const settle = t + 0.03 + Math.random() * 0.025;
-  contact(a, settle, g * 0.12, 4200 * pitch, 0.003);
-  modes(a, settle, STONE_MODES, g * 0.04, pitch * 1.02, 0.6);
-}
-
-/** 돌끼리 부딪치는 "짤깍": 판 울림 없이 돌 공명만, 더 높고 짧게 */
-function stoneOnStone(at: number, gain = 0.5) {
-  const a = audio();
-  if (!a) return;
-  const t = a.currentTime + at;
-  const p = jitter(1.25, 0.08);
-  contact(a, t, gain * 0.6, 5200 * p, 0.003);
-  modes(a, t, STONE_MODES, gain * 0.2, p, 0.7);
-}
-
-/** 둘 수 없는 자리: 손가락으로 판을 톡 — 돌 소리 없이 낮고 둔한 나무 울림만 */
-function boardTap(at: number) {
-  const a = audio();
-  if (!a) return;
-  const t = a.currentTime + at;
-  contact(a, t, 0.25, 900, 0.004);
-  modes(a, t, BOARD_MODES.slice(0, 3), 0.18, 0.8, 0.6);
+  src.connect(band).connect(g).connect(a.destination);
+  src.start(a.currentTime + at);
 }
 
 function vibrate(pattern: number | number[]) {
@@ -212,20 +126,24 @@ function vibrate(pattern: number | number[]) {
 
 export const feedback = {
   place() {
-    if (!playSample(samples.stones, 0, 0.9)) stoneOnBoard(0);
+    if (!playStone(0, 0.9)) {
+      click(0, 0.9, 3500, 0.008);
+      click(0, 0.4, 1200, 0.012);
+    }
     vibrate(10);
   },
-  /** n점을 따냈을 때: 돌이 튕겨 나가는 연출과 맞춰, 집어 든 돌끼리 부딪치는 소리. */
+  /** n점을 따냈을 때: 돌이 튕겨 나가는 연출과 맞춰, 집어 든 돌끼리 부딪치는 "탁탁" (착수음을 작고 가볍게) */
   capture(n: number) {
-    // 많이 따낼수록 조금 더 크게
-    if (!playSample(samples.capture, 0.09, Math.min(1, 0.6 + n * 0.08))) {
-      const clicks = Math.min(n, 6);
-      for (let i = 0; i < clicks; i++) stoneOnStone(0.09 + i * 0.045 + Math.random() * 0.015, 0.5 - i * 0.04);
+    const clicks = Math.min(n, 5);
+    for (let i = 0; i < clicks; i++) {
+      const at = 0.09 + i * 0.05 + Math.random() * 0.02;
+      if (!playStone(at, 0.45 - i * 0.05, 1.35)) click(at, 0.5 - i * 0.05, 4500, 0.005);
     }
     vibrate(n > 1 ? [12, 40, 12] : 15);
   },
+  /** 둘 수 없는 자리: 손가락으로 판을 두드리듯 낮고 둔한 "톡" */
   illegal() {
-    boardTap(0);
+    click(0, 0.6, 700, 0.015);
     vibrate([8, 30, 8]);
   },
 };
