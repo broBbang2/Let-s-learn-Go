@@ -273,3 +273,12 @@ def test_game_end_triggers_review(engine, records):
     g = Game(engine, records, rng=MaxRng(), human_available=True, on_finished=finished.append)
     s = g.resign()
     assert finished == [g.game_id] and s["review_url"] == f"/library#m-{g.game_id}"
+
+
+def test_live_territory_off_skips_ownership_queries(engine, records):
+    g = Game(engine, records, rng=MaxRng(), human_available=True, live_territory=False)
+    s = g.new_game(size=9, komi=7.0, mode=BEST)
+    assert s["ownership"] is None
+    s = g.user_move("pass")  # 첫 수 패스 = 큰 실수(13집) → 형세를 꺼도 실수 유형은 판정
+    assert s["ownership"] is None and s["territory_change"]["user"] is None
+    assert records.read("moves.jsonl")[-1]["mistake_type"] == "opening"

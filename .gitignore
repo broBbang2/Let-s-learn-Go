@@ -27,3 +27,6 @@ models/*.ckpt
 models/*.ckpt.tmp
 # 검증 중간 산출물 (result.json만 남김)
 data/arena/human-eval-*/*.sequences.json
+
+# 가상 사용자 실험 기록 (summary.json만 남김)
+data/sim/*/*/

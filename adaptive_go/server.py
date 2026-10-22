@@ -82,10 +82,13 @@ class Game:
         rank_policy=None,
         on_finished=None,
         rank_source=None,
+        live_territory=True,
     ):
         self.engine = engine
         # 판이 끝나면 불린다 (서버는 여기서 내 대국 복기 분석을 시작한다)
         self.on_finished = on_finished
+        # 매 수 형세·영역 변화 계산 (화면용). 가상 사용자 실험처럼 화면이 없으면 꺼서 빠르게 돈다
+        self.live_territory = live_territory
         # 실력 추정에 쓸 "급수별 수 확률" 공급원. 기본은 KataGo human 모델, 직접 학습한 모델로 바꿀 수 있다
         self.rank_policy = rank_policy or engine.human_policies
         self.rank_source = rank_source or ("ours" if rank_policy else "katago")
@@ -163,13 +166,19 @@ class Game:
                 self.board.play(move)
                 # 이 수의 효과 = "둔 뒤" − "그 자리에서 패스했다면". 두 국면 모두 상대 차례라
                 # 둘 차례의 이점이 상쇄된다 (두기 전과 비교하면 상대가 둘 다음 수의 가치까지 섞인다)
-                own_user = self._ownership_now()
-                user_change = change(
-                    self._ownership_of(before_moves + [(self.user_color, "pass")]), own_user, self.user_color, self.board.grid
-                )
                 eff = effective_loss(ev.score_loss, ev.winrate_before)
+                big_mistake = eff is not None and eff >= MISTAKE_LOSS
+                own_user = self._ownership_now() if self.live_territory or big_mistake else None
+                user_change = None
+                if self.live_territory:
+                    user_change = change(
+                        self._ownership_of(before_moves + [(self.user_color, "pass")]),
+                        own_user,
+                        self.user_color,
+                        self.board.grid,
+                    )
                 mistake = None
-                if eff is not None and eff >= MISTAKE_LOSS:
+                if big_mistake:
                     # 사활·전투 실수인지는 "최선수를 뒀다면"과 비교해야 안다: 최선수면 살았을 내 돌이 죽었나
                     vs_best = change(
                         self._ownership_of(before_moves + [(self.user_color, ev.best_move)]),
@@ -192,8 +201,12 @@ class Game:
                 self.evals.append(ev)
                 self.user_explain = explain_user_move(ev, ev.best_pv)
                 self._update_profile()  # 방금 수로 추정이 바뀌었으니 AI 급수도 다시 맞춘다
-                self.ownership = own_user
-                if not self.board.is_over():
+                if self.live_territory:  # 끈 상태에선 실수 판정용으로만 계산한 형세를 화면 상태에 넣지 않는다
+                    self.ownership = own_user
+                if not self.board.is_over() and not self.live_territory:
+                    self._ai_move()
+                    ai_change = None
+                elif not self.board.is_over():
                     self._ai_move()
                     self._update_live_ownership()
                     # AI 수의 효과도 같은 방식: "AI가 둔 뒤" − "AI가 패스했다면" (내 기준으로 센다)
@@ -309,7 +322,7 @@ class Game:
 
     def _update_live_ownership(self):
         """AI 응수까지 끝난 국면의 형세. 웹이 판 위에 누구 땅이 될지 칠한다."""
-        if self.board.is_over():
+        if self.board.is_over() or not self.live_territory:
             return
         self.ownership = self._ownership_now()
 
