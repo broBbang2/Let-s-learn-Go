@@ -1,6 +1,7 @@
 // 착수·따냄·불법수의 "손맛"을 한곳에 모은다.
 //
-// 지금(웹): 짧은 소리(Web Audio로 합성, 파일 없음) + 안드로이드 브라우저면 진동
+// 지금(웹): 실제 바둑돌 녹음(public/sounds, KaTrain MIT) + 안드로이드 브라우저면 진동.
+//          녹음을 아직 못 불러왔으면 Web Audio 합성음으로 대신한다.
 // 나중(앱): React Native로 옮길 때 이 함수들 안에 햅틱 한 줄씩만 추가하면 된다.
 // 화면 애니메이션은 GoBoard가 돌의 등장·퇴장으로 처리하고, 여기서는 감각 신호만 낸다.
 
@@ -34,10 +35,59 @@ function audio(): AudioContext | null {
   if (!enabled || typeof AudioContext === "undefined") return null;
   ctx ??= new AudioContext();
   if (ctx.state === "suspended") void ctx.resume();
+  loadSamples(ctx);
   return ctx;
 }
 
-// ---------- 바둑돌 소리 (모달 합성) ----------
+// ---------- 녹음 ----------
+
+const SAMPLE_FILES = {
+  stones: ["stone1", "stone2", "stone3", "stone4", "stone5"],
+  capture: ["capturing"],
+};
+const samples: { stones: AudioBuffer[]; capture: AudioBuffer[] } = { stones: [], capture: [] };
+let loading = false;
+
+function loadSamples(a: AudioContext) {
+  if (loading) return;
+  loading = true;
+  for (const kind of ["stones", "capture"] as const) {
+    for (const name of SAMPLE_FILES[kind]) {
+      fetch(`/sounds/${name}.wav`)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .then((buf) => a.decodeAudioData(buf))
+        .then((b) => samples[kind].push(b))
+        .catch(() => {
+          /* 못 불러오면 합성음을 계속 쓴다 */
+        });
+    }
+  }
+}
+
+// 브라우저는 사용자가 한 번 누른 뒤에야 소리를 허용하므로, 첫 클릭 때 미리 녹음을 불러 둔다 (첫 착수부터 녹음으로)
+if (typeof window !== "undefined") window.addEventListener("pointerdown", () => audio(), { once: true });
+
+let lastStone = -1;
+
+/** 녹음 하나를 재생. 매번 속도(=음높이)와 세기를 조금씩 바꿔 같은 소리가 반복되지 않게 */
+function playSample(list: AudioBuffer[], at: number, gain: number): boolean {
+  const a = audio();
+  if (!a || !list.length) return false;
+  // 같은 녹음이 연달아 나오지 않게
+  let i = Math.floor(Math.random() * list.length);
+  if (list.length > 1 && i === lastStone) i = (i + 1) % list.length;
+  if (list === samples.stones) lastStone = i;
+  const src = a.createBufferSource();
+  src.buffer = list[i];
+  src.playbackRate.value = jitter(1, 0.03);
+  const g = a.createGain();
+  g.gain.value = jitter(gain, 0.08);
+  src.connect(g).connect(a.destination);
+  src.start(a.currentTime + at);
+  return true;
+}
+
+// ---------- 합성 (녹음을 불러오기 전 대체용, 둘 수 없는 자리 "톡") ----------
 //
 // 실제 착수음은 세 겹이다.
 // 1. 돌이 판에 닿는 순간의 날카로운 "딱": 돌(조개·슬레이트)의 고음 공명, 20ms 안에 사라짐
@@ -162,13 +212,16 @@ function vibrate(pattern: number | number[]) {
 
 export const feedback = {
   place() {
-    stoneOnBoard(0);
+    if (!playSample(samples.stones, 0, 0.9)) stoneOnBoard(0);
     vibrate(10);
   },
-  /** n점을 따냈을 때: 돌이 튕겨 나가는 연출과 맞춰, 집어 든 돌끼리 부딪치는 짤깍을 여러 번. */
+  /** n점을 따냈을 때: 돌이 튕겨 나가는 연출과 맞춰, 집어 든 돌끼리 부딪치는 소리. */
   capture(n: number) {
-    const clicks = Math.min(n, 6);
-    for (let i = 0; i < clicks; i++) stoneOnStone(0.09 + i * 0.045 + Math.random() * 0.015, 0.5 - i * 0.04);
+    // 많이 따낼수록 조금 더 크게
+    if (!playSample(samples.capture, 0.09, Math.min(1, 0.6 + n * 0.08))) {
+      const clicks = Math.min(n, 6);
+      for (let i = 0; i < clicks; i++) stoneOnStone(0.09 + i * 0.045 + Math.random() * 0.015, 0.5 - i * 0.04);
+    }
     vibrate(n > 1 ? [12, 40, 12] : 15);
   },
   illegal() {

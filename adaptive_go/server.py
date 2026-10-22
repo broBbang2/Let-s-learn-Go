@@ -65,6 +65,7 @@ STATIC_TYPES = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".woff2": "font/woff2",
+    ".wav": "audio/wav",
     ".json": "application/json",
 }
 
@@ -451,7 +452,7 @@ def make_handler(game, library=None):
                 return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
             if path == "/classic":
                 return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
-            if path.startswith("/assets/"):
+            if path.startswith(("/assets/", "/sounds/")):
                 return self._static(APP_DIST, path)
             if self.path == "/board.js":
                 return self._file(WEB_DIR / "board.js", "text/javascript; charset=utf-8")

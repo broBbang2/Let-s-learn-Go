@@ -18,7 +18,7 @@ export function StatusCard({ state, busy, message, children }: { state: GameStat
   const ai = state.last_ai;
   let status: React.ReactNode;
   if (state.over) status = state.result ? `종국 · ${state.result.text}` : "종국";
-  else if (busy) status = <span className="thinking">AI가 생각 중</span>;
+  else if (busy) status = <span className="thinking">생각 중</span>;
   else if (state.to_play === state.user_color) status = `내 차례 (${colorName(state.user_color)})`;
   else status = "AI 차례";
 
