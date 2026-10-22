@@ -146,6 +146,7 @@ export function App() {
   const toggleSound = () => {
     setSoundEnabled(!sound);
     setSound(!sound);
+    if (!sound) feedback.place(); // 켤 때 한 번 들려준다
   };
 
   if (!state || !shown) {
