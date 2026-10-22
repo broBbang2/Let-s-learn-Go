@@ -1,0 +1,30 @@
+[
+  {
+    "epoch": 1,
+    "train": {
+      "loss": 2.0492,
+      "top1_played": 0.4529,
+      "top1_teacher": 0.4977
+    },
+    "val": {
+      "loss": 2.2684,
+      "top1_played": 0.3949,
+      "top1_teacher": 0.5548
+    },
+    "seconds": 2200
+  },
+  {
+    "epoch": 2,
+    "train": {
+      "loss": 1.9892,
+      "top1_played": 0.4641,
+      "top1_teacher": 0.5133
+    },
+    "val": {
+      "loss": 2.1862,
+      "top1_played": 0.4075,
+      "top1_teacher": 0.58
+    },
+    "seconds": 2420
+  }
+]

@@ -256,7 +256,18 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
   - `rank_estimate.POPULATION_PRIOR`(검증 판 제외 33,264명), `LIKELIHOOD_WEIGHT = 1.0`. 처음 보는 사용자는 7k에서 출발(전엔 3k). 저장된 사용자 추정(`rank_estimate.json`)이 있으면 그걸 씀. `human_eval.metrics`도 같은 규칙
   - 주의: OGS 사용자 분포라 우리 사용자와 다를 수 있음 → 사용자가 쌓이면 교체. 같은 검증 판으로 설정을 골라 실제 효과는 약간 작을 수 있음
   - 격자를 25k까지 넓히는 건 불가: KataGo human 모델 프로필이 rank_20k까지
-- 생성 데이터 추가분 2,400판(`data/train/20261021-232836`, 62만 국면) 생성 완료 → mixed에서 출발해 전체 데이터(280만 국면)로 2에폭 더 학습 중 → `models/rank_policy_mixed2.pt` (`--init`, lr 7e-4, `caffeinate`로 잠자기 방지)
+- 생성 데이터 추가분 2,400판(`data/train/20261021-232836`, 62만 국면) → mixed에서 출발해 전체 데이터(280만 국면)로 2에폭 더 학습 → **`models/rank_policy_mixed2.pt`** (`--init`, lr 7e-4, 에폭당 약 40분, `caffeinate`로 잠자기 방지). 생성 데이터 검증 손실 2.35 → 2.19, teacher 1순위 일치 58%
+- **최종 비교** (실제 사람 300명, 앱과 같은 규칙 = OGS 출발 분포 + w=1.0, `data/arena/human-eval-20261022-160443`):
+
+  | | 10수 오차 / 치우침 / 상관 | 30수 오차 / 치우침 / 상관 / ±3점 |
+  |---|---|---|
+  | KataGo human (99MB) | **4.25** / +2.2 / **0.71** | 3.64 / +2.3 / 0.78 / **53%** |
+  | 생성만 (distill_v1) | 4.75 / +2.0 / 0.61 | 4.19 / +2.6 / 0.72 / 48% |
+  | 사람+생성 (mixed) | 4.66 / +0.6 / 0.59 | 3.82 / +0.4 / 0.73 / 48% |
+  | **전체 더 학습 (mixed2, 5.4MB)** | 4.48 / **+0.7** / 0.62 | **3.52** / **+0.4** / **0.78** / 51% |
+
+  30수에선 teacher와 대등(오차 조금 낮고 치우침 훨씬 작음, 상관 같음), 10수까지는 teacher가 나음. 300명이라 0.1점 차이는 잡음 수준 → "대등"으로 봄. 사람 기보가 치우침을 줄인 핵심
+- 웹 대국에서 쓰려면 `python -m adaptive_go.server --rank-model models/rank_policy_mixed2.pt` (기본은 아직 KataGo human)
 - 생성 데이터 추가분 2,400판(seed 10000~) 생성 중 → `data/train/20261021-232836`
 
 **3. 형세 기반 학습 도구** (`territory.py`, 서버·React):
