@@ -205,6 +205,13 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
 - **TS 규칙 엔진** (`app/src/go/rules.ts`): board.py와 같은 규칙. 서버 history를 재생해 돌마다 id(놓인 수 번호)를 붙이고, 직전 렌더와 비교해 새 돌·따낸 돌을 안다. 내 수는 서버 응답 전에 바로 두고 따낸 돌도 바로 들어냄. 재생 결과가 서버 판과 다르면 서버 판을 씀
 - **feedback 모듈** (`app/src/feedback.ts`): `place / capture(n) / illegal` 한곳에 모음. 지금은 Web Audio 합성음 + `navigator.vibrate`(안드로이드만). 앱으로 옮길 때 여기에 햅틱 추가
 - 실행: `cd app && npm install && npm run dev` → http://localhost:5173 (API는 8000으로 프록시) / 배포용 `npm run build` → Python 서버가 바로 서빙. 테스트 `npm test`(규칙 5개), 서버 pytest 108개 통과
+- **기보 보관함도 React로** (2026-10-22): `app/library.html` + `app/src/library/` (Vite 멀티 페이지 빌드 → `dist/library.html`). 서버 `/library`는 빌드가 있으면 React, 없으면 예전 화면, 예전 화면은 `/library/classic`. 판은 대국 화면과 같은 `GoBoard`를 써서 한 수 앞으로 갈 때 착수·따냄 연출, 되돌리거나 건너뛸 땐 `instant`로 바로 바꿈
+- **React Native 대비 구조**: DOM에 의존하지 않는 코드만 모아 둠 → 앱에서 그대로 가져다 씀
+  - `app/src/go/rules.ts` (규칙), `app/src/types.ts` (대국 응답 타입)
+  - `app/src/core/http.ts`: `request`, `pct`, `setApiBase(url)` — 웹은 상대 경로, 앱은 시작할 때 서버 주소 지정
+  - `app/src/core/library.ts`: 기보 API·타입, 재생(`replayStones`), 주요 장면(`buildMoments`), 승률 그래프 좌표(`chartLayout`, react-native-svg로 그대로 그리면 됨)
+  - `app/src/core/useLibraryGame.ts`: 기보 불러오기·재생·분석 폴링 상태 훅
+  - 웹 전용: `components/`, `library/LibraryApp.tsx`, CSS, `feedback.ts`(Web Audio). 대국 화면 상태 로직은 아직 `App.tsx` 안에 있음 → 앱을 시작할 때 `useGame` 훅으로 `core/`에 빼면 됨
 
 ### 직접 학습한 모델: 급수 조건부 수 예측 (Maia-2 방식, 지식 증류)
 

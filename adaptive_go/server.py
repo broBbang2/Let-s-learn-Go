@@ -435,6 +435,11 @@ def make_handler(game, library=None):
             if path.startswith("/api/library") and library:
                 return self._library_get(path)
             if path == "/library":
+                # 대국 화면과 같이: React 빌드가 있으면 그걸, 없으면 예전 화면
+                if (APP_DIST / "library.html").exists():
+                    return self._file(APP_DIST / "library.html", "text/html; charset=utf-8")
+                return self._file(WEB_DIR / "library.html", "text/html; charset=utf-8")
+            if path == "/library/classic":
                 return self._file(WEB_DIR / "library.html", "text/html; charset=utf-8")
             if self.path == "/api/state":
                 with game.lock:

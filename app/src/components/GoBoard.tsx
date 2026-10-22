@@ -31,6 +31,8 @@ interface Props {
   onIllegal: (reason: IllegalReason) => void;
   /** 직전 렌더 대비 새로 놓인 돌, 따여서 사라진 돌 (같은 판 안에서만) */
   onStonesChange?: (added: Stone[], removed: Stone[]) => void;
+  /** 연출 없이 바로 바꾼다 (기보를 되돌리거나 여러 수 건너뛸 때) */
+  instant?: boolean;
 }
 
 interface Ghost {
@@ -70,8 +72,10 @@ export function GoBoard(props: Props) {
   // 화면을 처음 열었을 때 이미 있던 돌은 등장 연출 없이 그린다 (판 전체가 한꺼번에 튀지 않게)
   const initialKeys = useRef<Set<string> | null>(null);
   initialKeys.current ??= new Set(stones.map(keyOf));
+  if (props.instant) for (const s of stones) initialKeys.current.add(keyOf(s));
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const onStonesChange = props.onStonesChange;
+  const instant = props.instant;
 
   useLayoutEffect(() => {
     const next = new Map(stones.map((s) => [keyOf(s), s]));
@@ -85,6 +89,10 @@ export function GoBoard(props: Props) {
     const added = stones.filter((s) => !before.stones.has(keyOf(s)));
     const removed = [...before.stones.entries()].filter(([k]) => !next.has(k)).map(([, s]) => s);
     if (!added.length && !removed.length) return;
+    if (instant) {
+      setGhosts([]);
+      return;
+    }
     onStonesChange?.(added, removed);
     if (removed.length) {
       // 따낸 수(가장 최근에 놓인 돌)에서 가까운 돌부터 튕겨 나가게
@@ -98,7 +106,7 @@ export function GoBoard(props: Props) {
     }
     // keyOf는 gameId에만 의존
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stones, gameId, onStonesChange]);
+  }, [stones, gameId, onStonesChange, instant]);
 
   // ---------- 마우스·터치 ----------
   const svgRef = useRef<SVGSVGElement>(null);
