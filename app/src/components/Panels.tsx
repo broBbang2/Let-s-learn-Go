@@ -14,7 +14,7 @@ const pct = (p: number | null | undefined) =>
 
 type HoverMarkers = (m: Marker[] | null) => void;
 
-export function StatusCard({ state, busy, message }: { state: GameState; busy: boolean; message: string | null }) {
+export function StatusCard({ state, busy, message, children }: { state: GameState; busy: boolean; message: string | null; children?: React.ReactNode }) {
   const ai = state.last_ai;
   let status: React.ReactNode;
   if (state.over) status = state.result ? `종국 · ${state.result.text}` : "종국";
@@ -23,7 +23,7 @@ export function StatusCard({ state, busy, message }: { state: GameState; busy: b
   else status = "AI 차례";
 
   return (
-    <section className="card">
+    <section className="card status-card">
       <div className="status">{status}</div>
       {state.over && state.review_url && (
         <a className="review-link" href={state.review_url}>
@@ -46,6 +46,7 @@ export function StatusCard({ state, busy, message }: { state: GameState; busy: b
           </div>
         </div>
       )}
+      {children}
     </section>
   );
 }
@@ -197,17 +198,37 @@ export function StatsCard({ state, captures }: { state: GameState; captures: Rec
   );
 }
 
-export function ActionsCard(p: { locked: boolean; canResign: boolean; onPass: () => void; onResign: () => void }) {
+export function ActionButtons(p: { locked: boolean; canResign: boolean; onPass: () => void; onResign: () => void }) {
+  return (
+    <div className="buttons">
+      <button onClick={p.onPass} disabled={p.locked}>
+        패스
+      </button>
+      <button className="danger" onClick={p.onResign} disabled={!p.canResign}>
+        기권
+      </button>
+    </div>
+  );
+}
+
+/** 형세·소리 같은 화면 설정 */
+export function SettingsCard(p: { territoryOn: boolean; onTerritory: () => void; sound: boolean; onSound: () => void }) {
+  const row = (label: string, desc: string, on: boolean, toggle: () => void) => (
+    <div className="setting">
+      <div>
+        <div>{label}</div>
+        <div className="note">{desc}</div>
+      </div>
+      <button className={`switch${on ? " on" : ""}`} role="switch" aria-checked={on} aria-label={label} onClick={toggle}>
+        <span />
+      </button>
+    </div>
+  );
   return (
     <section className="card">
-      <div className="buttons">
-        <button onClick={p.onPass} disabled={p.locked}>
-          패스
-        </button>
-        <button className="danger" onClick={p.onResign} disabled={!p.canResign}>
-          기권
-        </button>
-      </div>
+      <h2>화면 설정</h2>
+      {row("형세 보기", "누구 땅이 될지 판에 칠하기", p.territoryOn, p.onTerritory)}
+      {row("소리", "착수·따냄 소리와 진동", p.sound, p.onSound)}
     </section>
   );
 }

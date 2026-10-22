@@ -2,18 +2,36 @@ import { MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { GoBoard, type TerritoryMode } from "./components/GoBoard";
-import { ActionsCard, AiCard, ExplainCard, MovesCard, NewGameCard, SkillCard, StatsCard, StatusCard, TerritoryCard, WeaknessCard } from "./components/Panels";
+import { ActionButtons, AiCard, ExplainCard, MovesCard, NewGameCard, SettingsCard, SkillCard, StatsCard, StatusCard, TerritoryCard, WeaknessCard } from "./components/Panels";
 import { feedback, setSoundEnabled, soundEnabled } from "./feedback";
 import { ILLEGAL_TEXT, Position, type IllegalReason, type Stone } from "./go/rules";
 import type { GameState, Marker, Mode } from "./types";
 
 const TERRITORY_KEY = "adaptive-go:territory";
+const TAB_KEY = "adaptive-go:tab";
+
+// 오른쪽 패널(모바일은 하단 시트) 탭: 대국 중에 보는 것 / 쌓인 실력 / 대국 준비
+const TABS = [
+  { id: "now", label: "지금" },
+  { id: "skill", label: "내 실력" },
+  { id: "game", label: "대국" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
 
 function readTerritoryPref(): boolean {
   try {
     return localStorage.getItem(TERRITORY_KEY) !== "off";
   } catch {
     return true;
+  }
+}
+
+function readTabPref(): Tab {
+  try {
+    const t = localStorage.getItem(TAB_KEY);
+    return TABS.some((x) => x.id === t) ? (t as Tab) : "now";
+  } catch {
+    return "now";
   }
 }
 
@@ -46,6 +64,17 @@ export function App() {
   const [localMsg, setLocalMsg] = useState<string | null>(null);
   const [territoryOn, setTerritoryOn] = useState(readTerritoryPref);
   const [sound, setSound] = useState(soundEnabled);
+  const [tab, setTabState] = useState<Tab>(readTabPref);
+  const [sheetOpen, setSheetOpen] = useState(false); // 모바일 하단 시트 펼침
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    setSheetOpen(true);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      /* 저장 못 해도 지금은 적용 */
+    }
+  };
   const turnStart = useRef<number | null>(null); // 내 차례 시작 시각 → 생각한 시간(think_ms)
 
   useEffect(() => {
@@ -134,13 +163,6 @@ export function App() {
           대국
         </a>
         <a href="/library">기보 보관함</a>
-        <span className="spacer" />
-        <button className={`toggle${territoryOn ? " on" : ""}`} onClick={toggleTerritory} aria-pressed={territoryOn} title="누구 땅이 될지 판에 칠하기">
-          형세 보기
-        </button>
-        <button className={`toggle${sound ? " on" : ""}`} onClick={toggleSound} aria-pressed={sound}>
-          소리
-        </button>
       </nav>
       <main>
         <div className="board-wrap">
@@ -166,28 +188,55 @@ export function App() {
           />
         </div>
 
-        <aside>
-          <StatusCard state={state} busy={busy} message={localMsg ?? state.message} />
-          {territoryOn && <TerritoryCard state={state} />}
-          <SkillCard state={state} />
-          <WeaknessCard state={state} />
-          <AiCard state={state} />
-          <StatsCard state={state} captures={shown.captures} />
-          <ActionsCard
-            locked={locked}
-            canResign={!busy && !state.over}
-            onPass={() => play("pass")}
-            onResign={() => void request("/api/resign", {})}
-          />
-          <ExplainCard state={state} setHoverMarkers={setHoverMarkers} />
-          <NewGameCard
-            disabled={busy}
-            humanAvailable={state.ai.human_available}
-            onStart={({ size, color, mode }: { size: number; color: "B" | "W"; mode: Mode }) =>
-              void request("/api/new", { size, color, mode, visits: 200, komi: size === 19 ? 7.5 : 7 })
-            }
-          />
-          <MovesCard history={state.history} />
+        <aside className={`panel${sheetOpen ? " open" : ""}`}>
+          <button className="sheet-handle" onClick={() => setSheetOpen(!sheetOpen)} aria-expanded={sheetOpen} aria-label={sheetOpen ? "패널 접기" : "패널 펼치기"}>
+            <span />
+          </button>
+          <StatusCard state={state} busy={busy} message={localMsg ?? state.message}>
+            <ActionButtons
+              locked={locked}
+              canResign={!busy && !state.over}
+              onPass={() => play("pass")}
+              onResign={() => void request("/api/resign", {})}
+            />
+          </StatusCard>
+          <div className="tabs" role="tablist">
+            {TABS.map((t) => (
+              <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "on" : undefined} onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="tab-body" role="tabpanel">
+            {tab === "now" && (
+              <>
+                {territoryOn && <TerritoryCard state={state} />}
+                <ExplainCard state={state} setHoverMarkers={setHoverMarkers} />
+                {!state.last_ai && !state.user_explain && <div className="empty tab-empty">수를 두면 여기에 AI의 수와 내 수 해설이 나옵니다.</div>}
+                <StatsCard state={state} captures={shown.captures} />
+              </>
+            )}
+            {tab === "skill" && (
+              <>
+                <SkillCard state={state} />
+                <WeaknessCard state={state} />
+                <AiCard state={state} />
+              </>
+            )}
+            {tab === "game" && (
+              <>
+                <NewGameCard
+                  disabled={busy}
+                  humanAvailable={state.ai.human_available}
+                  onStart={({ size, color, mode }: { size: number; color: "B" | "W"; mode: Mode }) =>
+                    void request("/api/new", { size, color, mode, visits: 200, komi: size === 19 ? 7.5 : 7 })
+                  }
+                />
+                <SettingsCard territoryOn={territoryOn} onTerritory={toggleTerritory} sound={sound} onSound={toggleSound} />
+                <MovesCard history={state.history} />
+              </>
+            )}
+          </div>
         </aside>
       </main>
     </MotionConfig>
