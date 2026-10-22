@@ -29,4 +29,5 @@ models/*.ckpt.tmp
 data/arena/human-eval-*/*.sequences.json
 
 # 가상 사용자 실험 기록 (summary.json만 남김)
+data/sim/*/*.jsonl
 data/sim/*/*/
