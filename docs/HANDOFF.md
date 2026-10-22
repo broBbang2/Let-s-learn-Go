@@ -65,7 +65,7 @@ def choose_move(candidates, target_loss, temperature):
 - `adaptive_go/train.py` — PyTorch 학습(mps), `adaptive_go/eval_model.py` — teacher와 실력 추정 비교
 - `library/` — 명국 SGF (+ `<이름>.notes.json` 명장면 메모, 출처는 `library/SOURCES.md`)
 - `models/b18c384nbt-humanv0.bin.gz` — KataGo human 모델 (v1.15.0 릴리스, sha256 637746e4…)
-- `tests/test_board.py`, `test_engine.py`, `test_server.py`, `test_skill.py`, `test_rating.py`, `test_difficulty.py`, `test_players.py`, `test_rank_estimate.py`, `test_estimate_eval.py`, `test_sgf.py`, `test_library.py`, `test_features.py`, `test_datagen.py`, `test_model.py` — pytest 133개, 전부 통과
+- `tests/test_board.py`, `test_engine.py`, `test_server.py`, `test_skill.py`, `test_rating.py`, `test_difficulty.py`, `test_players.py`, `test_rank_estimate.py`, `test_estimate_eval.py`, `test_sgf.py`, `test_library.py`, `test_features.py`, `test_datagen.py`, `test_model.py` — pytest 134개, 전부 통과
 - `tests/fake_katago.py` — KataGo 없이 JSON 프로토콜을 흉내 내는 가짜 엔진 (테스트용)
 
 `board.py` 요약:
@@ -267,7 +267,17 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
   | **전체 더 학습 (mixed2, 5.4MB)** | 4.48 / **+0.7** / 0.62 | **3.52** / **+0.4** / **0.78** / 51% |
 
   30수에선 teacher와 대등(오차 조금 낮고 치우침 훨씬 작음, 상관 같음), 10수까지는 teacher가 나음. 300명이라 0.1점 차이는 잡음 수준 → "대등"으로 봄. 사람 기보가 치우침을 줄인 핵심
-- 웹 대국에서 쓰려면 `python -m adaptive_go.server --rank-model models/rank_policy_mixed2.pt` (기본은 아직 KataGo human)
+- **두 모델 혼합 (서버 기본으로 적용)**: 저장된 검증 기록으로 "확률 섞기"(KataGo 30/50/70%)와 "앞 k수만 KataGo 후 전환"(5/10/15수) 비교
+
+  | | 10수 오차 | 30수 오차 / 치우침 / 상관 / ±3점 |
+  |---|---|---|
+  | KataGo human | 4.25 | 3.64 / +2.3 / 0.78 / 53% |
+  | 자체 (mixed2) | 4.48 | 3.52 / +0.4 / 0.78 / 51% |
+  | **혼합 KataGo 30%** | **4.21** | **3.28** / +1.5 / **0.81** / **58%** |
+
+  전환 방식은 혼합보다 못함. 치우침은 자체 단독보다 커지지만 오차·상관·적중률이 모두 가장 좋아 채택. 비율 3개를 같은 검증 판에서 골라 실제 효과는 조금 작을 수 있음
+  - `rank_estimate.mix_policies`, `MIX_KATAGO = 0.3`. 서버는 자체 모델 파일(`models/rank_policy_mixed2.pt`)과 human 모델이 있으면 기본 `--rank-source mix`, `ours`·`katago`로 하나만 쓸 수 있음. 화면 추정 급수 옆에 "자체+KataGo"
+- 정리: 학습 체크포인트(`*.ckpt`)와 중간 모델(`rank_policy_mixed.pt`, `rank_policy_distill_v1.pt` = git의 `rank_policy.pt`와 같은 파일) 삭제. 남은 모델: `rank_policy.pt`(생성 데이터만), `rank_policy_mixed2.pt`(사람+생성, 기본)
 - 생성 데이터 추가분 2,400판(seed 10000~) 생성 중 → `data/train/20261021-232836`
 
 **3. 형세 기반 학습 도구** (`territory.py`, 서버·React):

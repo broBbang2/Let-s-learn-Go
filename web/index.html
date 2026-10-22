@@ -451,7 +451,7 @@ function renderSkill() {
   $("estimate").hidden = !est;
   if (est) {
     const conf = Math.round(est.confidence * 100);
-    const src = est.source === "ours" ? " · 자체 모델" : "";
+    const src = est.source === "ours" ? " · 자체 모델" : est.source === "mix" ? " · 자체+KataGo" : "";
     $("est-label").textContent = (est.moves ? `${est.label} (확신 ${conf}%, ${est.moves}수 기준)` : `${est.mean_label} (이전 기록 기준)`) + src;
     const bars = $("est-bars");
     bars.innerHTML = "";

@@ -22,7 +22,7 @@ from .library import Library
 from .engine import KataGoEngine, ownership_score
 from .play import DEFAULT_CONFIG, DEFAULT_MODEL
 from .players import BestPlayer, HumanPlayer, HybridPlayer, TargetLossPlayer
-from .rank_estimate import RANKS, RankEstimate, nearest_rank, rank_label
+from .rank_estimate import RANKS, RankEstimate, mix_policies, nearest_rank, rank_label
 from .rating import Rating, update
 from .records import Records, new_game_id
 from .skill import effective_loss, evaluate_move, summarize
@@ -33,6 +33,7 @@ WEB_DIR = ROOT / "web"
 APP_DIST = ROOT / "app" / "dist"  # React 대국 화면 빌드 결과 (cd app && npm run build)
 HUMAN_MODEL = ROOT / "models/b18c384nbt-humanv0.bin.gz"
 LIBRARY_DIR = ROOT / "library"
+RANK_MODEL = ROOT / "models/rank_policy_mixed2.pt"  # 실제 사람 기보로 학습한 실력 추정 모델
 
 
 # 최강 모드(KataGo 최선수만 둠)의 레이팅 가정치. 맞춤 모드는 difficulty의 레벨별 레이팅을 쓴다.
@@ -72,14 +73,22 @@ class Game:
     """한 판의 상태와 엔진 호출을 묶는다. HTTP와 분리해 테스트하기 쉽게 했다."""
 
     def __init__(
-        self, engine, records, rng=None, human_available=False, calibration=None, rank_policy=None, on_finished=None
+        self,
+        engine,
+        records,
+        rng=None,
+        human_available=False,
+        calibration=None,
+        rank_policy=None,
+        on_finished=None,
+        rank_source=None,
     ):
         self.engine = engine
         # 판이 끝나면 불린다 (서버는 여기서 내 대국 복기 분석을 시작한다)
         self.on_finished = on_finished
         # 실력 추정에 쓸 "급수별 수 확률" 공급원. 기본은 KataGo human 모델, 직접 학습한 모델로 바꿀 수 있다
         self.rank_policy = rank_policy or engine.human_policies
-        self.rank_source = "ours" if rank_policy else "katago"
+        self.rank_source = rank_source or ("ours" if rank_policy else "katago")
         self.records = records
         self.rng = rng or random.Random()
         self.human_available = human_available
@@ -514,7 +523,13 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--data-dir", default=str(ROOT / "data"), help="대국 기록·레이팅 저장 위치")
     p.add_argument("--library-dir", default=str(LIBRARY_DIR), help="명국 SGF 폴더")
-    p.add_argument("--rank-model", help="실력 추정에 직접 학습한 모델 사용 (예: models/rank_policy.pt)")
+    p.add_argument("--rank-model", default=str(RANK_MODEL), help="실력 추정에 쓸 자체 학습 모델")
+    p.add_argument(
+        "--rank-source",
+        choices=["mix", "ours", "katago"],
+        default="mix",
+        help="실력 추정 공급원: mix = KataGo 30%% + 자체 70%% (기본, 실제 사람 검증에서 가장 정확), ours, katago",
+    )
     args = p.parse_args(argv)
 
     human_model = str(HUMAN_MODEL) if HUMAN_MODEL.exists() else None
@@ -525,12 +540,19 @@ def main(argv=None):
     with KataGoEngine.from_paths(args.katago, args.model, args.config, human_model=human_model) as engine:
         print("KataGo 초기화 중... (첫 실행은 20초 정도 걸림)")
         engine.analyze(Board(9), max_visits=1)  # 미리 데워서 첫 수 대기를 없앤다
-        rank_policy = None
-        if args.rank_model:
-            from .model import NetPolicy  # torch는 이 옵션을 쓸 때만 불러온다
+        rank_policy, source = None, "katago"
+        if args.rank_source != "katago" and Path(args.rank_model).exists() and human_model:
+            from .model import NetPolicy  # torch는 자체 모델을 쓸 때만 불러온다
 
-            rank_policy = NetPolicy(args.rank_model).human_policies
-            print(f"실력 추정: 직접 학습한 모델 {args.rank_model}")
+            ours = NetPolicy(args.rank_model).human_policies
+            if args.rank_source == "mix":
+                rank_policy = lambda board, profiles: mix_policies(  # noqa: E731
+                    engine.human_policies(board, profiles), ours(board, profiles)
+                )
+            else:
+                rank_policy = ours
+            source = args.rank_source
+        print(f"실력 추정: {source}" + (f" ({args.rank_model})" if source != "katago" else ""))
         # 기보 분석은 대국 엔진을 막지 않도록 KataGo를 하나 더 띄운다 (처음 분석할 때)
         library = Library(
             args.library_dir,
@@ -543,6 +565,7 @@ def main(argv=None):
             human_available=bool(human_model),
             calibration=calibration,
             rank_policy=rank_policy,
+            rank_source=source,
             # 판이 끝나면 바로 복기 분석을 시작해 둔다 → 끝나고 "복기 보기"를 누를 즈음엔 준비됨
             on_finished=lambda game_id: library.start(f"m-{game_id}"),
         )

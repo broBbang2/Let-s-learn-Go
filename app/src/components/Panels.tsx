@@ -95,7 +95,7 @@ export function SkillCard({ state }: { state: GameState }) {
               {est.moves
                 ? `${est.label} (확신 ${Math.round(est.confidence * 100)}%, ${est.moves}수 기준)`
                 : `${est.mean_label} (이전 기록 기준)`}
-              {est.source === "ours" ? " · 자체 모델" : ""}
+              {est.source === "ours" ? " · 자체 모델" : est.source === "mix" ? " · 자체+KataGo" : ""}
             </b>
           </div>
           <RankBars values={est.distribution} ranks={est.ranks} highlightTop />

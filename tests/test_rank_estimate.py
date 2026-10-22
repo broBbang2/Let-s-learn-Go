@@ -62,3 +62,13 @@ def test_new_user_starts_from_population_prior():
     assert abs(sum(POPULATION_PRIOR) - 1) < 0.01
     assert nearest_rank(e.mean_stones()) == "7k"  # OGS 사용자 분포의 가운데
     assert e.probs()[-1] > 0  # 표본 없는 9단도 0은 아님
+
+
+def test_mix_policies_averages_probabilities():
+    from adaptive_go.rank_estimate import mix_policies
+
+    k = {"rank_5k": {"A1": 0.8, "B2": 0.2}}
+    o = {"rank_5k": {"A1": 0.4, "C3": 0.6}}
+    m = mix_policies(k, o, alpha=0.25)["rank_5k"]
+    assert m == {"A1": 0.25 * 0.8 + 0.75 * 0.4, "B2": 0.25 * 0.2, "C3": 0.75 * 0.6}
+    assert abs(sum(m.values()) - 1) < 1e-9

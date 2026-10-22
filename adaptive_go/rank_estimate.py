@@ -98,3 +98,18 @@ class RankEstimate:
             "moves": self.moves,
             "distribution": [round(p, 4) for p in self.probs()],
         }
+
+
+# 실력 추정에서 KataGo human 모델과 자체 모델을 섞는 비율 (KataGo 쪽).
+# 실제 사람 300명 검증: KataGo만 30수 오차 3.64, 자체만 3.52, 30% 혼합 3.28(상관 0.81, ±3급 58%)로 가장 좋았다
+MIX_KATAGO = 0.3
+
+
+def mix_policies(katago, ours, alpha=MIX_KATAGO):
+    """두 공급원의 {프로필: {수: 확률}}을 확률 평균으로 섞는다 (로그 평균이 아니라: 한쪽이라도 그럴듯하면 인정)."""
+    out = {}
+    for profile, k in katago.items():
+        o = ours[profile]
+        out[profile] = {m: alpha * k.get(m, 0.0) + (1 - alpha) * o.get(m, 0.0) for m in set(k) | set(o)}
+    return out
+
