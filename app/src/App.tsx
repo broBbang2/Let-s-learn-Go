@@ -211,9 +211,9 @@ export function App() {
           <div className="tab-body" role="tabpanel">
             {tab === "now" && (
               <>
-                {territoryOn && <TerritoryCard state={state} />}
                 <ExplainCard state={state} setHoverMarkers={setHoverMarkers} />
                 {!state.last_ai && !state.user_explain && <div className="empty tab-empty">수를 두면 여기에 AI의 수와 내 수 해설이 나옵니다.</div>}
+                {territoryOn && <TerritoryCard state={state} />}
                 <StatsCard state={state} captures={shown.captures} />
               </>
             )}

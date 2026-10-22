@@ -234,7 +234,27 @@ form.new-game { display: grid; gap: 10px; }
 .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
 .explain h3 { font-size: 13px; margin: 12px 0 4px; }
-.explain div:first-of-type > h3 { margin-top: 0; }
+
+/* 코치 한 마디: 배지 + 한 줄 */
+.coach-line { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 1.45; margin-top: 8px; }
+.coach-line:first-of-type { margin-top: 0; }
+.coach-line b { font-variant-numeric: tabular-nums; }
+.verdict {
+  flex: none; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.verdict.best { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.verdict.good { color: var(--accent); }
+.verdict.meh { color: #9a6a12; }
+.verdict.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.verdict.ai { color: var(--muted); }
+.hover-move { cursor: default; text-decoration: underline dotted; text-underline-offset: 2px; }
+details.more { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); list-style: none; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary::before { content: "▸"; display: inline-block; width: 1em; transition: transform .15s ease; }
+details.more[open] summary::before { transform: rotate(90deg); }
+details.more summary:hover { color: var(--ink); }
 .explain p { margin: 0 0 6px; font-size: 13px; }
 table.cands { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 table.cands th { text-align: right; color: var(--muted); font-weight: 500; padding: 2px 4px; }

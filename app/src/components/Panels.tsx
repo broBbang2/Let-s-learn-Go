@@ -364,69 +364,104 @@ export function ExplainCard({ state, setHoverMarkers }: { state: GameState; setH
         : `${top} 쪽 확률이 가장 높아(${pct(maxP)}) 추정이 그쪽으로 움직였습니다.`;
   }
   const hasHuman = ai?.candidates.some((c) => c.human_p != null);
+  const ev = state.last_eval;
+  const verdict = ev ? verdictOf(ev.score_loss, ev.move === ev.best_move) : null;
 
   return (
     <section className="card explain">
-      <h2>수 해설</h2>
+      <h2>코치 한 마디</h2>
+      {/* 핵심만 한 줄씩: 내 수 평가가 먼저, 그다음 AI가 왜 그렇게 뒀는지 */}
+      {ev && verdict && (
+        <div className="coach-line">
+          <span className={`verdict ${verdict.tone}`}>{verdict.label}</span>
+          <span>
+            내 수 <b>{ev.move}</b>
+            {ev.move === ev.best_move ? " · 엔진 최선수" : <> · 최선 <b {...hoverAt(ev.best_move, "최선")} className="hover-move">{ev.best_move}</b>보다 {ev.score_loss.toFixed(1)}집 손해</>}
+          </span>
+        </div>
+      )}
       {ai && (
-        <div>
-          <h3>AI의 수 · {ai.move}</h3>
-          <p>{ai.summary}</p>
-          {ai.candidates.length > 0 && (
-            <table className="cands">
-              <thead>
-                <tr>
-                  <th>후보</th>
-                  <th>손실</th>
-                  <th>AI 승률</th>
-                  {hasHuman && <th>사람</th>}
-                  <th>탐색</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ai.candidates.map((c) => (
-                  <tr
-                    key={c.move}
-                    className={c.chosen ? "chosen" : undefined}
-                    title={c.pv.length ? `예상 진행: ${c.pv.join(" → ")}` : ""}
-                    {...hoverAt(c.move, c.move === ai.move ? "✓" : "?")}
-                  >
-                    <td>
-                      {c.move}
-                      {c.chosen ? " ✓" : ""}
-                    </td>
-                    <td>{c.loss.toFixed(1)}집</td>
-                    <td>{pct(c.winrate)}</td>
-                    {hasHuman && <td>{pct(c.human_p)}</td>}
-                    <td>{c.visits}</td>
+        <div className="coach-line">
+          <span className="verdict ai">AI</span>
+          <span>
+            <b>{ai.move}</b> · {firstSentence(ai.summary)}
+          </span>
+        </div>
+      )}
+
+      <details className="more">
+        <summary>자세히 보기</summary>
+        {ai && (
+          <div>
+            <h3>AI의 수 · {ai.move}</h3>
+            <p>{ai.summary}</p>
+            {ai.candidates.length > 0 && (
+              <table className="cands">
+                <thead>
+                  <tr>
+                    <th>후보</th>
+                    <th>손실</th>
+                    <th>AI 승률</th>
+                    {hasHuman && <th>사람</th>}
+                    <th>탐색</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-      {me && state.last_eval && (
-        <div>
-          <h3>내 수 · {state.last_eval.move}</h3>
-          <p>{me.summary}</p>
-          {me.best_pv.length > 0 && (
-            <div className="pv" {...hoverAt(me.best_pv[0], "최선")}>
-              최선 예상 진행: {me.best_pv.join(" → ")}
-            </div>
-          )}
-        </div>
-      )}
-      {evd && state.estimate && (
-        <div>
-          <h3>실력 추정 근거 · {evd.move}</h3>
-          <p>급수별로 이 수를 둘 확률입니다. {why}</p>
-          <RankBars values={evd.probs} ranks={state.estimate.ranks} />
-        </div>
-      )}
+                </thead>
+                <tbody>
+                  {ai.candidates.map((c) => (
+                    <tr
+                      key={c.move}
+                      className={c.chosen ? "chosen" : undefined}
+                      title={c.pv.length ? `예상 진행: ${c.pv.join(" → ")}` : ""}
+                      {...hoverAt(c.move, c.move === ai.move ? "✓" : "?")}
+                    >
+                      <td>
+                        {c.move}
+                        {c.chosen ? " ✓" : ""}
+                      </td>
+                      <td>{c.loss.toFixed(1)}집</td>
+                      <td>{pct(c.winrate)}</td>
+                      {hasHuman && <td>{pct(c.human_p)}</td>}
+                      <td>{c.visits}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+        {me && state.last_eval && (
+          <div>
+            <h3>내 수 · {state.last_eval.move}</h3>
+            <p>{me.summary}</p>
+            {me.best_pv.length > 0 && (
+              <div className="pv" {...hoverAt(me.best_pv[0], "최선")}>
+                최선 예상 진행: {me.best_pv.join(" → ")}
+              </div>
+            )}
+          </div>
+        )}
+        {evd && state.estimate && (
+          <div>
+            <h3>실력 추정 근거 · {evd.move}</h3>
+            <p>급수별로 이 수를 둘 확률입니다. {why}</p>
+            <RankBars values={evd.probs} ranks={state.estimate.ranks} />
+          </div>
+        )}
+      </details>
     </section>
   );
 }
+
+/** 내 수 한 줄 평가. 3집 이상은 "큰 실수" 집계와 같은 기준 */
+function verdictOf(loss: number, best: boolean): { label: string; tone: "best" | "good" | "meh" | "bad" } {
+  if (best || loss < 0.3) return { label: "최선", tone: "best" };
+  if (loss < 1) return { label: "좋은 수", tone: "good" };
+  if (loss < 3) return { label: "아쉬운 수", tone: "meh" };
+  return { label: "큰 실수", tone: "bad" };
+}
+
+/** 서버 해설의 첫 문장 (방식·핵심 수치가 들어 있다) */
+const firstSentence = (s: string) => s.match(/^.*?\.\s/)?.[0].trim() ?? s;
 
 function Seg<T extends string>(p: { name: string; value: T; options: { value: T; label: string; title?: string; disabled?: boolean }[]; onChange: (v: T) => void; disabled: boolean }) {
   return (
