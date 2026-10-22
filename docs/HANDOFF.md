@@ -65,7 +65,7 @@ def choose_move(candidates, target_loss, temperature):
 - `adaptive_go/train.py` — PyTorch 학습(mps), `adaptive_go/eval_model.py` — teacher와 실력 추정 비교
 - `library/` — 명국 SGF (+ `<이름>.notes.json` 명장면 메모, 출처는 `library/SOURCES.md`)
 - `models/b18c384nbt-humanv0.bin.gz` — KataGo human 모델 (v1.15.0 릴리스, sha256 637746e4…)
-- `tests/test_board.py`, `test_engine.py`, `test_server.py`, `test_skill.py`, `test_rating.py`, `test_difficulty.py`, `test_players.py`, `test_rank_estimate.py`, `test_estimate_eval.py`, `test_sgf.py`, `test_library.py`, `test_features.py`, `test_datagen.py`, `test_model.py` — pytest 115개, 전부 통과
+- `tests/test_board.py`, `test_engine.py`, `test_server.py`, `test_skill.py`, `test_rating.py`, `test_difficulty.py`, `test_players.py`, `test_rank_estimate.py`, `test_estimate_eval.py`, `test_sgf.py`, `test_library.py`, `test_features.py`, `test_datagen.py`, `test_model.py` — pytest 133개, 전부 통과
 - `tests/fake_katago.py` — KataGo 없이 JSON 프로토콜을 흉내 내는 가짜 엔진 (테스트용)
 
 `board.py` 요약:
@@ -250,7 +250,13 @@ API: `GET /api/state`, `POST /api/new {size, komi, color, visits}`, `POST /api/m
   사람 데이터로 오차·치우침은 줄었지만 teacher를 넘진 못함. 초반(5~10수)은 오히려 mixed가 가장 나쁨(치우침 +4.0~4.8)
 - 세 모델 모두 하수를 가운데로 끌어올림(실제 20k대 → 추정 −12~−14) → 모델보다 추정 방식(12칸 격자를 균등에서 시작해 평균, 격자 최저 20k) 쪽 문제로 봄
 - **선형 보정은 효과 없음**: 판 단위로 반씩 나눠 "추정 → OGS 급수" 직선을 맞추고 나머지 반에 적용 → 오차가 그대로이거나 늘어남(teacher 30수 3.38→3.49, mixed 3.60→4.16). 남은 오차는 일정한 치우침보다 개인별 편차(30수로 한 사람을 정하기엔 부족 + OGS 급수 자체의 불확실성)가 큼
-- 개선 후보: 격자를 25k~까지 넓히기, 사전분포를 OGS 급수 분포로, 더 오래 학습(손실이 아직 감소 중), 생성 데이터 2,400판 추가분(생성 88%) 섞어 재학습
+- **추정 방식 개선 (적용함)**: 저장된 검증 기록으로 출발 분포(균등 vs OGS 사용자 분포) × w(0.5/1.0) × 답 고르기(평균/최빈) 8가지 비교
+  - OGS 분포로 시작하면 치우침이 크게 줄어듦: mixed +2.2 → **+0.2~0.4**, 10수 오차 5.6 → 4.7. teacher도 10수 4.6 → 4.2
+  - 최선: **OGS 분포 + w=1.0 + 사후 평균** → teacher 10수 4.24 / 30수 3.63(±3점 53%), mixed 4.66 / 3.81. 최빈 급수는 나아지지 않음
+  - `rank_estimate.POPULATION_PRIOR`(검증 판 제외 33,264명), `LIKELIHOOD_WEIGHT = 1.0`. 처음 보는 사용자는 7k에서 출발(전엔 3k). 저장된 사용자 추정(`rank_estimate.json`)이 있으면 그걸 씀. `human_eval.metrics`도 같은 규칙
+  - 주의: OGS 사용자 분포라 우리 사용자와 다를 수 있음 → 사용자가 쌓이면 교체. 같은 검증 판으로 설정을 골라 실제 효과는 약간 작을 수 있음
+  - 격자를 25k까지 넓히는 건 불가: KataGo human 모델 프로필이 rank_20k까지
+- 생성 데이터 추가분 2,400판(`data/train/20261021-232836`, 62만 국면) 생성 완료 → mixed에서 출발해 전체 데이터(280만 국면)로 2에폭 더 학습 중 → `models/rank_policy_mixed2.pt` (`--init`, lr 7e-4, `caffeinate`로 잠자기 방지)
 - 생성 데이터 추가분 2,400판(seed 10000~) 생성 중 → `data/train/20261021-232836`
 
 **3. 형세 기반 학습 도구** (`territory.py`, 서버·React):

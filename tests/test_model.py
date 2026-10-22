@@ -129,3 +129,22 @@ def test_train_resume_continues_from_checkpoint(shard_dir, tmp_path, monkeypatch
     ckpt = torch.load(out.with_suffix(".ckpt"), weights_only=False)
     assert ckpt["epoch"] == 2 and [h["epoch"] for h in ckpt["history"]] == [1, 2]
     assert out.exists()
+
+
+def test_train_init_starts_from_given_weights(shard_dir, tmp_path, monkeypatch):
+    import adaptive_go.train as tr
+
+    monkeypatch.setattr(tr, "pick_device", lambda: "cpu")
+    monkeypatch.setattr(tr.progress, "tee_stdout", lambda kind: None)
+    base = tmp_path / "base.pt"
+    torch.manual_seed(1)
+    start = RankPolicyNet(channels=8, blocks=1)
+    save(start, base)
+    seen = {}
+    real = tr.run_epoch
+    def spy(model, batches, device, opt=None, sched=None, on_step=None, first_step=0):
+        seen.setdefault("w", model.policy.weight.detach().clone())  # 첫 에폭 시작 시 가중치
+        return real(model, batches, device, opt, sched, on_step, first_step)
+    monkeypatch.setattr(tr, "run_epoch", spy)
+    tr.main([str(shard_dir), "--channels", "8", "--blocks", "1", "--epochs", "1", "--init", str(base), "--out", str(tmp_path / "m.pt")])
+    assert torch.allclose(seen["w"], start.policy.weight)

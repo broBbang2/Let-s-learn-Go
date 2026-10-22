@@ -21,12 +21,11 @@ import numpy as np
 from . import arena, progress
 from .board import Board, IllegalMoveError
 from .ogs import SAMPLE, games
-from .rank_estimate import PROB_FLOOR, RANKS, RankEstimate
+from .rank_estimate import LIKELIHOOD_WEIGHT, PROB_FLOOR, RANKS, RankEstimate
 from .train import is_val
 
 BUCKETS = [(-30, -15, "20k대"), (-15, -10, "15~11k"), (-10, -5, "10~6k"), (-5, 0, "5~1k"), (0, 20, "1d+")]
 CHECKPOINTS = [5, 10, 20, 30]
-WEIGHT = 0.5
 PROFILES = [f"rank_{r}" for r in RANKS]
 
 
@@ -70,14 +69,16 @@ def sequences(policy_fn, gs, moves):
     return out
 
 
-def metrics(seqs, weight=WEIGHT, checkpoints=CHECKPOINTS):
+def metrics(seqs, weight=LIKELIHOOD_WEIGHT, checkpoints=CHECKPOINTS, prior=True):
+    """prior=True면 앱과 같이 처음 보는 사용자의 출발점(POPULATION_PRIOR)에서, False면 균등에서 시작."""
     rows = {}
+    start = RankEstimate.from_prior(None).log_probs if prior else [0.0] * len(RANKS)
     for n in checkpoints:
         est, true = [], []
         for s in seqs:
             if len(s["loglik"]) < n:
                 continue
-            e = RankEstimate([weight * sum(col) for col in zip(*s["loglik"][:n])])
+            e = RankEstimate([b + weight * sum(col) for b, col in zip(start, zip(*s["loglik"][:n]))])
             est.append(e.mean_stones())
             true.append(s["true"])
         if len(est) < 3:

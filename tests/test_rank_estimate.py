@@ -53,3 +53,12 @@ def test_next_game_prior_is_flatter():
     prior = e.next_game_prior()
     assert max(prior) < max(e.probs())
     assert RankEstimate.from_prior(prior).map_rank() == "20k"
+
+
+def test_new_user_starts_from_population_prior():
+    from adaptive_go.rank_estimate import POPULATION_PRIOR
+
+    e = RankEstimate.from_prior(None)
+    assert abs(sum(POPULATION_PRIOR) - 1) < 0.01
+    assert nearest_rank(e.mean_stones()) == "7k"  # OGS 사용자 분포의 가운데
+    assert e.probs()[-1] > 0  # 표본 없는 9단도 0은 아님

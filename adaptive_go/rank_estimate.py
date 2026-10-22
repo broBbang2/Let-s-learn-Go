@@ -15,9 +15,16 @@ from dataclasses import dataclass, field
 
 # 추정할 급수 격자. 급수 사이 간격이 약할수록 넓은 건 실력 차이가 하수 쪽에서 더 크기 때문
 RANKS = ["20k", "15k", "10k", "7k", "5k", "3k", "1k", "1d", "3d", "5d", "7d", "9d"]
-LIKELIHOOD_WEIGHT = 0.5
+# 실제 사람(OGS 300명) 검증에서 사전분포를 OGS 분포로 둘 때 1.0이 0.5보다 조금 나았다(10수 오차 4.45→4.24)
+LIKELIHOOD_WEIGHT = 1.0
 # human 정책이 0을 준 수(둘 수 없는 자리 외에 신경망이 사실상 0으로 본 수)도 사람은 둘 수 있으니 바닥값을 둔다
 PROB_FLOOR = 1e-4
+# 처음 보는 사용자의 출발점: OGS 랭크 대국 사용자의 급수 분포(검증 판 제외 33,264명을 가장 가까운 격자로).
+# 균등하게 시작하면 추정이 격자 가운데(약 3급)로 끌려가 하수를 크게 강하게 봤다(치우침 +2.2~3.4급) →
+# 이 분포로 시작하니 치우침이 +0.2~0.4급으로 줄었다. 우리 사용자가 쌓이면 그 분포로 바꿔야 한다
+POPULATION_PRIOR = [0.070, 0.178, 0.238, 0.161, 0.120, 0.115, 0.055, 0.040, 0.020, 0.004, 0.0, 0.0]
+PRIOR_FLOOR = 1e-3  # 표본이 없는 고단(7d·9d)도 아예 불가능하진 않게
+
 # 지난 판 추정을 다음 판 출발점으로 쓸 때 분포를 이만큼 평평하게 (지수 < 1) → 실력 변화에 다시 적응할 여지
 CARRY_OVER = 0.5
 
@@ -44,8 +51,9 @@ class RankEstimate:
 
     @classmethod
     def from_prior(cls, probs=None):
+        """probs가 없으면(처음 보는 사용자) POPULATION_PRIOR에서 출발."""
         if not probs:
-            return cls()
+            probs = [max(p, PRIOR_FLOOR) for p in POPULATION_PRIOR]
         return cls([math.log(max(p, 1e-12)) for p in probs])
 
     def update(self, policies, move, weight=LIKELIHOOD_WEIGHT):

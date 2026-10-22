@@ -139,6 +139,7 @@ def main(argv=None):
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--ckpt-steps", type=int, default=500, help="이 배치 수마다 이어 하기용 체크포인트 저장")
     p.add_argument("--resume", action="store_true", help="<out>.ckpt에서 이어 하기 (처음 설정·데이터를 그대로 씀)")
+    p.add_argument("--init", help="이 모델 가중치에서 출발 (이미 학습한 모델을 데이터를 늘려 더 학습할 때)")
     args = p.parse_args(argv)
     progress.tee_stdout("train")
     started = time.time()
@@ -169,6 +170,9 @@ def main(argv=None):
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * len(train_batches))
 
     history, best, first_epoch, first_step = [], None, 1, 0
+    if args.init and not ckpt:
+        model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=False)["state"])
+        print(f"가중치 출발점: {args.init}", flush=True)
     if ckpt:
         model.load_state_dict(ckpt["model"])
         opt.load_state_dict(ckpt["opt"])

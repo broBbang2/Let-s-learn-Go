@@ -138,8 +138,8 @@ def test_adaptive_game_end_updates_difficulty_and_level(engine, records):
 def test_human_mode_plays_human_policy_move(engine, records):
     g = Game(engine, records, rng=MaxRng(), human_available=True, calibration={"20k": 1.8, "5k": 1.0})
     s = g.new_game(size=9, komi=7.0, color=WHITE)  # human 모델이 있으면 기본이 사람형 맞춤
-    # 첫 판: 급수 추정이 균등 → 평균 약 -2.4점 → 가장 가까운 격자 3k
-    assert s["ai"]["mode"] == HUMAN and s["ai"]["profile"] == "3k" and not s["ai"]["hybrid"]
+    # 첫 판: 급수 추정이 OGS 사용자 분포에서 출발 → 평균 약 -7.5점 → 가장 가까운 격자 7k
+    assert s["ai"]["mode"] == HUMAN and s["ai"]["profile"] == "7k" and not s["ai"]["hybrid"]
     # 가짜 human 정책 D4 0.6 / C3 0.3 / A9 0.1 → 확률 비례 추출 (MaxRng는 최댓값 D4)
     assert s["history"] == [(BLACK, "D4")]
     assert s["last_ai"]["loss"] == 1.5
@@ -194,10 +194,10 @@ def test_legacy_hint_rows_still_excluded(records):
 
 def test_ai_move_has_explanation(engine, records):
     g = Game(engine, records, rng=MaxRng(), human_available=True)
-    s = g.new_game(size=9, komi=7.0, color=WHITE)  # 사람형 3k → D4
+    s = g.new_game(size=9, komi=7.0, color=WHITE)  # 사람형 7k → D4
     ex = s["last_ai"]["explain"]
     assert ex["move"] == "D4"
-    assert "3급 사람 모델이 이 국면에서 이 수를 둘 확률은 60%(1위)" in ex["summary"]
+    assert "7급 사람 모델이 이 국면에서 이 수를 둘 확률은 60%(1위)" in ex["summary"]
     assert "최선수 C3 대비 1.5집" in ex["summary"]
     rows = {r["move"]: r for r in ex["candidates"]}
     assert rows["D4"]["chosen"] and rows["D4"]["human_p"] == 0.6 and rows["D4"]["loss"] == 1.5
