@@ -31,3 +31,12 @@ data/arena/human-eval-*/*.sequences.json
 # 가상 사용자 실험 기록 (summary.json만 남김)
 data/sim/*/*.jsonl
 data/sim/*/*/
+
+# 직접 둔 대국 기록 (개인 기록, 공개 저장소에 올리지 않음)
+data/moves.jsonl
+data/games.jsonl
+data/player.json
+data/rank_estimate.json
+data/difficulty.json
+data/ai_levels.json
+data/library_analysis/m-*.json
